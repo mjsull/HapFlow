@@ -1,6 +1,11 @@
 __author__ = 'mjsull'
 from Tkinter import *
+import tkFileDialog
+import tkSimpleDialog
 import tkFont
+import tkMessageBox
+
+
 try:
     import pysam
 except:
@@ -18,6 +23,23 @@ class variation:
 
 class App:
     def __init__(self, master):
+        self.menubar = Menu(master)
+        self.filemenu = Menu(self.menubar, tearoff=0)
+        self.filemenu.add_command(label="Create flow file", command=self.create_flow)
+        self.filemenu.add_command(label="Load flow file", command=self.load_flow)
+        self.filemenu.add_separator()
+        self.filemenu.add_command(label="Exit", command=self.quit)
+        self.menubar.add_cascade(label="File", menu=self.filemenu)
+        self.toolmenu = Menu(self.menubar, tearoff=0)
+        self.toolmenu.add_command(label="Goto base", command=self.goto_base)
+        self.toolmenu.add_command(label="Create image", command=self.create_image)
+        self.menubar.add_cascade(label="Tools", menu=self.toolmenu)
+        self.helpmenu = Menu(self.menubar, tearoff=0)
+        self.helpmenu.add_command(label="About", command=self.about)
+        self.helpmenu.add_command(label="Help", command=self.help)
+        self.helpmenu.add_command(label="Citing Haploflow", command=self.cite)
+        self.menubar.add_cascade(label="Help", menu=self.helpmenu)
+        master.config(menu=self.menubar)
         self.currxscroll = 1000
         self.curryscroll = 1000
         self.fontsize = 10 # When zooming in/out font does scale, we create a custom font and then change the font size when we zoom
@@ -39,7 +61,6 @@ class App:
         xscrollbar.config(command=self.xscroll)
         yscrollbar.config(command=self.canvas.yview)
         self.reflength = None
-        self.load_flow()
         self.ypossnp = 60
         self.yposref = 20
         self.ypos1 = 160
@@ -50,12 +71,12 @@ class App:
         self.block_width = 82
         self.gap_size = 8
         self.block_height = 60
-        self.currxscroll = len(self.poslist) * (self.block_width + self.gap_size) + 100
-        self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
-        if self.reflength is None:
-            self.reflength = self.poslist[-1]
-        self.update_frame(600)
-
+        self.flowfile = None
+        try:
+            self.flowfile = sys.argv[1]
+            self.load_flow()
+        except:
+            pass
 
     def update_frame(self, x2=None):
         lastone = True
@@ -106,15 +127,50 @@ class App:
             self.canvas.create_rectangle(starto, self.yposref + 20, endo, self.yposref, tags='top', fill='#E1974C')
             self.canvas.create_text(x1 + 10, self.ypossnp - 2, anchor=SW, text='SNP block length: ' + str(positions[-1] - positions[0]), font=self.customFont, tags='top')
 
+    def create_flow(self):
+        pass
+
+    def quit(self):
+        root.quit()
+
+    def goto_base(self):
+        base = tkSimpleDialog.askint('Goto base', 'Base number')
+        xpos = base * (self.block_width + self.gap_size) - 20
+        self.canvas.xview_scroll(xpos, 'units')
+
+    def create_image(self):
+        try:
+            saveas = tkFileDialog.asksaveasfilename(parent=root)
+        except IOError:
+            tkMessageBox.showerror('File not valid', 'Please choose another file.')
+        self.canvas.postscript(file=saveas, colormode='color')
+
+    def about(self):
+        pass
+
+    def help(self):
+        pass
+
+    def cite(self):
+        pass
 
     def load_flow(self):
+        if self.flowfile is None:
+            filename = tkFileDialog.askopenfilename()
+            if filename == '' or filename == ():
+                return
+            self.flowfile = filename
         self.poslist = []
         self.flowlist = []
-        for line in open(sys.argv[1]):
+        for line in open(self.flowfile):
             if sum(map(int, line.split()[1:])) >= 1:
                 self.poslist.append(int(line.split()[0]))
                 self.flowlist.append(map(int, line.split()[1:]))
-
+        self.currxscroll = len(self.poslist) * (self.block_width + self.gap_size) + 100
+        self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
+        if self.reflength is None:
+            self.reflength = self.poslist[-1]
+        self.update_frame(600)
 
 
 
