@@ -437,23 +437,116 @@ class App:
                                     x+twidth/2, curry12+lwidth, x+twidth/2, curry12+lwidth,
                                     fill='#9067A7', smooth=1, outline='black')
 
+def getflow(samfile, vcffile, outfile):
+    try:
+        import pysam
+    except:
+        return 0
+    snps = []
+    vcf = open(vcffile)
+    poslist = []
+    flowlist = []
+    for line in vcf:
+        if not line.startswith('#'):
+            chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
+            aninstance = variation(chrom, pos, ref, alt, qual)
+            for i in info.split(';'):
+                if i.startswith('DP='):
+                    aninstance.depth = int(i.split('=')[1])
+                if i.startswith('AO='):
+                    if ',' in i:
+                        aninstance.altcount = int(i.split('=')[1].split(',')[0])
+                    else:
+                        aninstance.altcount = int(i.split('=')[1])
+                if i.startswith('RO='):
+                    aninstance.refcount = int(i.split('=')[1])
+                if i.startswith('AB='):
+                    if ',' in i:
+                        aninstance.altrat = float(i.split('=')[1].split(',')[0])
+                    else:
+                        aninstance.altrat = float(i.split('=')[1])
+            snps.append(aninstance)
+
+    sam = pysam.Samfile(samfile, 'rb')
+    readsref1 = set()
+    readsalt1 = set()
+    readsref2 = set()
+    readsalt2 = set()
+    oldpos1, oldpos2 = None, None
+    somethingelse = 0
+    for snp in snps:
+        for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
+            if pileupcolumn.pos == snp.pos - 1:
+                readsref3 = set()
+                readsalt3 = set()
+                for pileupread in pileupcolumn.pileups:
+                    #readbase = pileupread.alignment.seq[pileupread.qpos]
+                    if pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.ref)] == snp.ref:
+                        readsref3.add(pileupread.alignment.qname)
+                    elif pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.alt)] == snp.alt:
+                        readsalt3.add(pileupread.alignment.qname)
+                    else:
+                        somethingelse += 1
+                break
+        ref2ref2ref = len(readsref1.intersection(readsref2).intersection(readsref3))
+        ref2ref2alt = len(readsref1.intersection(readsref2).intersection(readsalt3))
+        ref2alt2ref = len(readsref1.intersection(readsalt2).intersection(readsref3))
+        ref2alt2alt = len(readsref1.intersection(readsalt2).intersection(readsalt3))
+        alt2ref2ref = len(readsalt1.intersection(readsref2).intersection(readsref3))
+        alt2ref2alt = len(readsalt1.intersection(readsref2).intersection(readsalt3))
+        alt2alt2ref = len(readsalt1.intersection(readsalt2).intersection(readsref3))
+        alt2alt2alt = len(readsalt1.intersection(readsalt2).intersection(readsalt3))
+        ref2ref = len(readsref1.intersection(readsref2))
+        ref2alt = len(readsref1.intersection(readsalt2))
+        alt2ref = len(readsalt1.intersection(readsref2))
+        alt2alt = len(readsalt1.intersection(readsalt2))
+        justref = len(readsref1)
+        justalt = len(readsalt1)
+        combo = [ref2ref2ref, ref2ref2alt, ref2alt2ref, ref2alt2alt, alt2ref2ref, alt2ref2alt, alt2alt2ref, alt2alt2alt, ref2ref, ref2alt, alt2ref, alt2alt, justref, justalt]
+        if not oldpos2 is None:
+            flowlist.append(combo)
+            poslist.append(oldpos2)
+        readsalt1 = readsalt2
+        readsref1 = readsref2
+        readsalt2 = readsalt3
+        readsref2 = readsref3
+        oldpos2 = oldpos1
+        oldpos1 = snp.pos
+    ref2ref = len(readsref1.intersection(readsref2))
+    ref2alt = len(readsref1.intersection(readsalt2))
+    alt2ref = len(readsalt1.intersection(readsref2))
+    alt2alt = len(readsalt1.intersection(readsalt2))
+    justref = len(readsref1)
+    justalt = len(readsalt1)
+    combo = [0, 0, 0, 0, 0, 0, 0, 0, ref2ref, ref2alt, alt2ref, alt2alt, justref, justalt]
+    flowlist.append(combo)
+    poslist.append(oldpos2)
+    justref = len(readsref2)
+    justalt = len(readsalt2)
+    flowlist.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, justref, justalt])
+    poslist.append(oldpos1)
+    print somethingelse
+    out = open(outfile, 'w')
+    for i in range(0, len(poslist)):
+        out.write(str(poslist[i]) + '\t' + '\t'.join(map(str, flowlist[i])) + '\n')
+    out.close()
 
 
 
 
 
 
-
-
-
-root = Tk()
-root.title('strainVis')
-root.option_add('*Font', 'Courier 10')
-root.option_add("*Background", "#E0E0FF")
-root.option_add("*Foreground", "#2B3856")
-root.option_add("*Listbox.Background", '#FFFFFF')
-root.option_add("*Scrollbar.Background", "#C0C0FF")
-root.option_add("*Entry.Background", "#FFFFFF")
-root.geometry("600x400")
-app = App(root)
-root.mainloop()
+if sys.argv[1] == '-cl':
+    getflow(sys.argv[2], sys.argv[3], sys.argv[4])
+else:
+    root = Tk()
+    root.title('strainVis')
+    root.option_add('*Font', 'Courier 10')
+    root.option_add("*Background", "#E0E0FF")
+    root.option_add("*Foreground", "#2B3856")
+    root.option_add("*Listbox.Background", '#FFFFFF')
+    root.option_add("*Scrollbar.Background", "#C0C0FF")
+    root.option_add("*Entry.Background", "#FFFFFF")
+    root.geometry("600x400")
+    app = App(root)
+    root.mainloop()
