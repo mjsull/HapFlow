@@ -67,7 +67,7 @@ class App:
         self.ypos2 = 225
         self.ypos3 = 290
         self.ypos4 = 355
-        self.min_flow = 5
+        self.min_flow = 2
         self.block_width = 82
         self.gap_size = 8
         self.block_height = 60
@@ -437,7 +437,7 @@ class App:
                                     x+twidth/2, curry12+lwidth, x+twidth/2, curry12+lwidth,
                                     fill='#9067A7', smooth=1, outline='black')
 
-def getflow(samfile, vcffile, outfile):
+def getflow(samfile, vcffile, outfile, flowmode=0):
     try:
         import pysam
     except:
@@ -466,7 +466,6 @@ def getflow(samfile, vcffile, outfile):
                     else:
                         aninstance.altrat = float(i.split('=')[1])
             snps.append(aninstance)
-
     sam = pysam.Samfile(samfile, 'rb')
     readsref1 = set()
     readsalt1 = set()
@@ -481,12 +480,28 @@ def getflow(samfile, vcffile, outfile):
                 readsalt3 = set()
                 for pileupread in pileupcolumn.pileups:
                     #readbase = pileupread.alignment.seq[pileupread.qpos]
-                    if pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.ref)] == snp.ref:
-                        readsref3.add(pileupread.alignment.qname)
-                    elif pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.alt)] == snp.alt:
-                        readsalt3.add(pileupread.alignment.qname)
-                    else:
-                        somethingelse += 1
+                    if flowmode == 0:
+                        if pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.ref)] == snp.ref:
+                            readsref3.add(pileupread.alignment.qname)
+                        elif pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.alt)] == snp.alt:
+                            readsalt3.add(pileupread.alignment.qname)
+                        else:
+                            if ',' in snp.alt:
+                                altsnps = set()
+                                lengths = []
+                                for i in snp.alt.split(','):
+                                    altsnps.add(i)
+                                    if not len(i) in lengths:
+                                        lengths.append(len(i))
+                                getit = False
+                                for i in lengths:
+                                    if pileupread.alignment.seq[pileupread.qpos:pileupread.qpos+i] in altsnps:
+                                        readsalt3.add(pileupread.alignment.qname)
+                                        getit = True
+                                if not getit:
+                                    somethingelse += 1
+                            else:
+                                somethingelse += 1
                 break
         ref2ref2ref = len(readsref1.intersection(readsref2).intersection(readsref3))
         ref2ref2alt = len(readsref1.intersection(readsref2).intersection(readsalt3))
