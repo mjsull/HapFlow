@@ -88,6 +88,8 @@ class App:
         self.canvas.delete(ALL)
         indexa = int(x1 / (self.block_width + self.gap_size))
         indexb = int(x2 / (self.block_width + self.gap_size))
+        if indexb >= len(self.flowlist):
+            indexb = len(self.flowlist) - 1
         positions = []
         suppositions = []
         for i in range(indexa, indexb + 1):
@@ -172,102 +174,6 @@ class App:
             self.reflength = self.poslist[-1]
         self.update_frame(600)
 
-
-
-    def getsnps(self):
-        snps = []
-        vcf = open(self.vcf_file)
-        self.poslist = []
-        self.flowlist = []
-        for line in vcf:
-            if not line.startswith('#'):
-                chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
-                aninstance = variation(chrom, pos, ref, alt, qual)
-                for i in info.split(';'):
-                    if i.startswith('DP='):
-                        aninstance.depth = int(i.split('=')[1])
-                    if i.startswith('AO='):
-                        if ',' in i:
-                            aninstance.altcount = int(i.split('=')[1].split(',')[0])
-                        else:
-                            aninstance.altcount = int(i.split('=')[1])
-                    if i.startswith('RO='):
-                        aninstance.refcount = int(i.split('=')[1])
-                    if i.startswith('AB='):
-                        if ',' in i:
-                            aninstance.altrat = float(i.split('=')[1].split(',')[0])
-                        else:
-                            aninstance.altrat = float(i.split('=')[1])
-                snps.append(aninstance)
-
-        sam = pysam.Samfile(self.sam_file, 'rb')
-        readsref1 = set()
-        readsalt1 = set()
-        readsref2 = set()
-        readsalt2 = set()
-        oldpos1, oldpos2 = None, None
-        for snp in snps:
-            somethingelse = 0
-            for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
-                if pileupcolumn.pos == snp.pos - 1:
-                    readsref3 = set()
-                    readsalt3 = set()
-                    for pileupread in pileupcolumn.pileups:
-                        readbase = pileupread.alignment.seq[pileupread.qpos]
-                        if readbase == snp.ref:
-                            readsref3.add(pileupread.alignment.qname)
-                        elif readbase == snp.alt:
-                            readsalt3.add(pileupread.alignment.qname)
-                        else:
-                            somethingelse += 1
-                    break
-            ref2ref2ref = len(readsref1.intersection(readsref2).intersection(readsref3))
-            ref2ref2alt = len(readsref1.intersection(readsref2).intersection(readsalt3))
-            ref2alt2ref = len(readsref1.intersection(readsalt2).intersection(readsref3))
-            ref2alt2alt = len(readsref1.intersection(readsalt2).intersection(readsalt3))
-            alt2ref2ref = len(readsalt1.intersection(readsref2).intersection(readsref3))
-            alt2ref2alt = len(readsalt1.intersection(readsref2).intersection(readsalt3))
-            alt2alt2ref = len(readsalt1.intersection(readsalt2).intersection(readsref3))
-            alt2alt2alt = len(readsalt1.intersection(readsalt2).intersection(readsalt3))
-            ref2ref = len(readsref1.intersection(readsref2))
-            ref2alt = len(readsref1.intersection(readsalt2))
-            alt2ref = len(readsalt1.intersection(readsref2))
-            alt2alt = len(readsalt1.intersection(readsalt2))
-            justref = len(readsref1)
-            justalt = len(readsalt1)
-            combo = [ref2ref2ref, ref2ref2alt, ref2alt2ref, ref2alt2alt, alt2ref2ref, alt2ref2alt, alt2alt2ref, alt2alt2alt]
-            if not oldpos2 is None:
-                if sum(combo) >= 10:
-                    self.flowlist.append(combo)
-                else:
-                    combo = [ref2ref, ref2alt, alt2ref, alt2alt]
-                    if sum(combo) >= 6:
-                        self.flowlist.append(combo)
-                    else:
-                        self.flowlist.append([justref, justalt])
-                self.poslist.append(oldpos2)
-            readsalt1 = readsalt2
-            readsref1 = readsref2
-            readsalt2 = readsalt3
-            readsref2 = readsref3
-            oldpos2 = oldpos1
-            oldpos1 = snp.pos
-        ref2ref = len(readsref1.intersection(readsref2))
-        ref2alt = len(readsref1.intersection(readsalt2))
-        alt2ref = len(readsalt1.intersection(readsref2))
-        alt2alt = len(readsalt1.intersection(readsalt2))
-        justref = len(readsref1)
-        justalt = len(readsalt1)
-        combo = [ref2ref, ref2alt, alt2ref, alt2alt]
-        if sum(combo) >= 6:
-            self.flowlist.append(combo)
-        else:
-            self.flowlist.append([justref, justalt])
-        self.poslist.append(oldpos2)
-        justref = len(readsref2)
-        justalt = len(readsalt2)
-        self.flowlist.append([justref, justalt])
-        self.poslit.append(oldpos1)
 
 
     def xscroll(self, stuff, stuff2, stuff3=None):
@@ -437,7 +343,7 @@ class App:
                                     x+twidth/2, curry12+lwidth, x+twidth/2, curry12+lwidth,
                                     fill='#9067A7', smooth=1, outline='black')
 
-def getflow(samfile, vcffile, outfile, flowmode=0):
+def getflow(samfile, vcffile, outfile, flowmode=0, skipindels=True):
     try:
         import pysam
     except:
@@ -465,7 +371,14 @@ def getflow(samfile, vcffile, outfile, flowmode=0):
                         aninstance.altrat = float(i.split('=')[1].split(',')[0])
                     else:
                         aninstance.altrat = float(i.split('=')[1])
-            snps.append(aninstance)
+            if skipindels:
+                variantlens = set()
+                for i in alt.split(','):
+                    variantlens.add(len(i))
+                if len(variantlens) == 1 and len(ref) in variantlens:
+                    snps.append(aninstance)
+            else:
+                snps.append(aninstance)
     sam = pysam.Samfile(samfile, 'rb')
     readsref1 = set()
     readsalt1 = set()
@@ -476,32 +389,20 @@ def getflow(samfile, vcffile, outfile, flowmode=0):
     for snp in snps:
         for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
             if pileupcolumn.pos == snp.pos - 1:
+                variants = set(snp.alt.split(','))
+                varlength = len(snp.ref)
                 readsref3 = set()
                 readsalt3 = set()
                 for pileupread in pileupcolumn.pileups:
-                    #readbase = pileupread.alignment.seq[pileupread.qpos]
+                    rvar = pileupread.alignment.seq[pileupread.qpos:pileupread.qpos +
+                           pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
                     if flowmode == 0:
-                        if pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.ref)] == snp.ref:
+                        if rvar == snp.ref:
                             readsref3.add(pileupread.alignment.qname)
-                        elif pileupread.alignment.seq[pileupread.qpos:pileupread.qpos + len(snp.alt)] == snp.alt:
+                        elif rvar in variants:
                             readsalt3.add(pileupread.alignment.qname)
                         else:
-                            if ',' in snp.alt:
-                                altsnps = set()
-                                lengths = []
-                                for i in snp.alt.split(','):
-                                    altsnps.add(i)
-                                    if not len(i) in lengths:
-                                        lengths.append(len(i))
-                                getit = False
-                                for i in lengths:
-                                    if pileupread.alignment.seq[pileupread.qpos:pileupread.qpos+i] in altsnps:
-                                        readsalt3.add(pileupread.alignment.qname)
-                                        getit = True
-                                if not getit:
-                                    somethingelse += 1
-                            else:
-                                somethingelse += 1
+                            somethingelse += 1
                 break
         ref2ref2ref = len(readsref1.intersection(readsref2).intersection(readsref3))
         ref2ref2alt = len(readsref1.intersection(readsref2).intersection(readsalt3))
@@ -517,7 +418,7 @@ def getflow(samfile, vcffile, outfile, flowmode=0):
         alt2alt = len(readsalt1.intersection(readsalt2))
         justref = len(readsref1)
         justalt = len(readsalt1)
-        combo = [ref2ref2ref, ref2ref2alt, ref2alt2ref, ref2alt2alt, alt2ref2ref, alt2ref2alt, alt2alt2ref, alt2alt2alt, ref2ref, ref2alt, alt2ref, alt2alt, justref, justalt]
+        combo = [ref2ref2ref, ref2ref2alt, ref2alt2alt, ref2alt2ref, alt2ref2alt, alt2ref2ref, alt2alt2ref, alt2alt2alt, ref2ref, ref2alt, alt2ref, alt2alt, justref, justalt]
         if not oldpos2 is None:
             flowlist.append(combo)
             poslist.append(oldpos2)

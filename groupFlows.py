@@ -3,6 +3,8 @@ __author__ = 'mjsul_000'
 
 import pysam
 import sys
+import subprocess
+
 
 class variation:
     def __init__(self, chrom, pos, ref, alt, qual):
@@ -12,7 +14,7 @@ class variation:
         self.alt = alt
         self.qual = qual
 
-def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minreadsflow=2, minfractflow=0.01):
+def groupflow(samfile, vcffile, outfile, minreadsvar=2, minreadsflow=2, minsnpqual=0):
     try:
         import pysam
     except:
@@ -21,6 +23,7 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
     vcf = open(vcffile)
     sys.stdout.write('Reading vcf file...')
     sys.stdout.flush()
+    # get variants from VCF file
     for line in vcf:
         if not line.startswith('#'):
             chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
@@ -40,7 +43,8 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
                         aninstance.altrat = float(i.split('=')[1].split(',')[0])
                     else:
                         aninstance.altrat = float(i.split('=')[1])
-            snps.append(aninstance)
+            if aninstance.qual >= minsnpqual:
+                snps.append(aninstance)
     sys.stdout.write(str(len(snps)) + ' snps found.\n')
     sam = pysam.Samfile(samfile, 'rb')
     variantmax = 0
@@ -49,6 +53,7 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
     firblock = None
     secblock = None
     refblock = None
+    printcount = 0
     blocks = []
     breaks = []
     novar, threevar, recombinants, forked, channelled, properflow, singflow = 0, 0, 0, 0, 0, 0, 0
@@ -56,18 +61,28 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
     thecovlist = []
     sys.stdout.write('Finding flows...')
     sys.stdout.flush()
+    lastthree = False
+    depths = []
+    for pileupcolumn in sam.pileup():
+        depths.append(pileupcolumn.n)
+    mediancov = depths[len(depths)/2]
+    global halfmed, onehalfmed
+    halfmed = mediancov / 2
+    onehalfmed = mediancov * 3 / 2
+    if halfmed < 5:
+        halfmed = 5
     for snp in snps:
         covcount = 0
-        for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
-            if pileupcolumn.pos == snp.pos - 1:
-                varlength = len(snp.ref)
-                variants = snp.alt.split(',') + [snp.ref]
-                variantreads = [set() for i in range(len(variants))]
-                for pileupread in pileupcolumn.pileups:
+        for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1): # Find all pileup columns assosciated with position
+            if pileupcolumn.pos == snp.pos - 1: # find the specific pileup column at the position of interest
+                varlength = len(snp.ref) # find the amount of pilup columns assosciated with the variation called by freebayes
+                variants = snp.alt.split(',') + [snp.ref] # list all potential variants at this site
+                variantreads = [set() for i in range(len(variants))] # sets for putting reads assosciated with each variant in
+                for pileupread in pileupcolumn.pileups: # iterate over all reads aligning to that base
                     covcount += 1
                     count = 0
                     rvar = pileupread.alignment.seq[pileupread.qpos:pileupread.qpos +
-                           pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
+                           pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)] # read sequence at variant position
                     for i in variants:
                         if rvar == i:
                             variantreads[count].add(pileupread.alignment.qname)
@@ -80,6 +95,7 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
                 max1 = None
                 max2c = 0
                 max2 = None
+                maxflow = 0
                 for i in variantreads:
                     if len(i) >= minreadsvar:
                         if len(i) > max1c:
@@ -96,23 +112,31 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
                             flowa.append('fir')
                             flowb.append(count)
                         secflow = len(lastsecreads.intersection(i))
+                        if firflow > maxflow:
+                            maxflow = firflow
+                        if secflow >= maxflow:
+                            maxflow = secflow
                         if secflow >= minreadsflow:
                             flowa.append('sec')
                             flowb.append(count)
                     count += 1
+                breakit = False
                 if variations >= variantmax:
                     variantmax = variations
-                if variations == 0:
+                if variations == 0: # if there is anything other than two variants at this site skip to next site
                     novar += 1
                     break
                 elif variations == 1:
                     break
                 elif variations == 2:
-                    pass
+                    if lastthree:
+                        breakit = True
+                        lastthree = False
                 elif variations >= 3:
                     threevar += 1
+                    lastthree = True
                     break
-                if len(flowa) == 0:
+                if len(flowa) == 0 or (len(flowa) == 1 and maxflow <= 5):
                     if not firblock is None:
                         blocks.append((firblock, secblock, refblock))
                         breaks.append('gap')
@@ -123,7 +147,7 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
                     refblock = [snp.ref]
                     lastfirreads = variantreads[max1]
                     lastsecreads = variantreads[max2]
-                if len(flowa) == 1:
+                elif len(flowa) == 1 and not breakit:
                     singflow += 1
                     if flowa[0] == 'fir':
                         base = variants[flowb[0]]
@@ -154,32 +178,25 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
                             firblock.append((snp.pos, base, len(variantreads[max1])))
                             lastfirreads = variantreads[max1]
                             lastsecreads = variantreads[max2]
-                if len(flowa) == 2:
-                    if len(set(flowa)) == 1:
-                        forked += 1
-                        break
-                    elif len(set(flowb)) == 1:
-                        channelled += 1
-                        break
+                elif len(flowa) == 2 and not len(set(flowa)) == 1 and not len(set(flowb)) == 1 and not breakit:
+                    properflow += 1
+                    if flowa[0] == 'fir':
+                        base = variants[flowb[0]]
+                        firblock.append((snp.pos, base, len(variantreads[flowb[0]])))
+                        base = variants[flowb[1]]
+                        secblock.append((snp.pos, base, len(variantreads[flowb[1]])))
+                        refblock.append(snp.ref)
+                        lastfirreads = variantreads[flowb[0]]
+                        lastsecreads = variantreads[flowb[1]]
                     else:
-                        properflow += 1
-                        if flowa[0] == 'fir':
-                            base = variants[flowb[0]]
-                            firblock.append((snp.pos, base, len(variantreads[flowb[0]])))
-                            base = variants[flowb[1]]
-                            secblock.append((snp.pos, base, len(variantreads[flowb[1]])))
-                            refblock.append(snp.ref)
-                            lastfirreads = variantreads[flowb[0]]
-                            lastsecreads = variantreads[flowb[1]]
-                        else:
-                            base = variants[flowb[0]]
-                            secblock.append((snp.pos, base, len(variantreads[flowb[0]])))
-                            refblock.append(snp.ref)
-                            base = variants[flowb[1]]
-                            firblock.append((snp.pos, base, len(variantreads[flowb[1]])))
-                            lastfirreads = variantreads[flowb[1]]
-                            lastsecreads = variantreads[flowb[1]]
-                if len(flowa) > 2:
+                        base = variants[flowb[0]]
+                        secblock.append((snp.pos, base, len(variantreads[flowb[0]])))
+                        refblock.append(snp.ref)
+                        base = variants[flowb[1]]
+                        firblock.append((snp.pos, base, len(variantreads[flowb[1]])))
+                        lastfirreads = variantreads[flowb[1]]
+                        lastsecreads = variantreads[flowb[0]]
+                else: # more than 3 flows means recombination is happening at significant levels at this site
                     recombpos.append(snp.pos)
                     recombinants += 1
                     blocks.append((firblock, secblock, refblock))
@@ -197,12 +214,13 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
     sys.stdout.write(str(threevar) + ' sites with three variants found.\n')
     sys.stdout.write(str(variantmax) + ' maximum variants at a single site.\n')
     thecovlist.sort()
-    sys.stdout.write(str(thecovlist[len(thecovlist) / 2]) + ' median coverage, ' + str(thecovlist[len(thecovlist) / 2] / 2)\
-                     + ' coverage cutoff being used.\nFlows under this coverage will not be used.\n')
+    sys.stdout.write(str(mediancov) + ' median coverage, ' + str(halfmed) + '-' + str(onehalfmed)\
+                     + ' coverage cutoffs being used.\nFlows outside of these coverages will not be used.\n')
     covcut = thecovlist[len(thecovlist) / 2] /2
     dominantreads = set()
     secondaryreads = set()
     out = open(outfile + '.txt', 'w')
+    global recombblocklist
     recombblocklist = []
     mids, lowcovblock, goodblocks = 0, 0, 0
     ratios = []
@@ -213,10 +231,14 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
     for i in range(len(blocks)):
         firstreads, secreads = set(), set()
         blockcov = []
+        blockcova = []
+        blockcovb = []
         for j in range(len(blocks[i][0])):
             firvar = blocks[i][0][j][1]
             secvar = blocks[i][1][j][1]
             blockcov.append(blocks[i][0][j][2] + blocks[i][1][j][2])
+            blockcova.append(blocks[i][0][j][2])
+            blockcovb.append(blocks[i][1][j][2])
             coveragelist.append(blocks[i][0][j][2] + blocks[i][1][j][2])
             for pileupcolumn in sam.pileup(snp.chrom, blocks[i][0][j][0], blocks[i][0][j][0] + 1):
                 if pileupcolumn.pos == blocks[i][0][j][0] - 1:
@@ -233,21 +255,34 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
         recombblock = False
         coverageblocklist.append(max(blockcov))
         if breaks[i] == 'recomb' and i != 0 and breaks[i-1] == 'recomb':
-            if blocks[i][0][-1][0] - blocks[i][0][0][0] <= 50: # if the block is less than 50 bp long
+            if blocks[i][0][-1][0] - blocks[i][0][0][0] <= 100: # if the block is less than 50 bp long
                 recombblock = True
-                recombblocklist.append(len(blocks[i][0]))
+                recombblocklist.append((blocks[i][0][0][0], blocks[i][0][-1][0]))
         if not recombblock and max(blockcov) >= covcut:
-            ratios.append(len(secreads) * 1.0 / (len(secreads) + len(firstreads)))
-            if len(firstreads) * 1.0 / (len(secreads) + len(firstreads)) >= 0.7:
-                dominantreads.update(firstreads)
-                secondaryreads.update(secreads)
-                goodblocks += 1
-            elif len(secreads) * 1.0 / (len(secreads) + len(firstreads)) >= 0.7:
-                dominantreads.update(secreads)
-                secondaryreads.update(firstreads)
-                goodblocks += 1
+            highcovs = set()
+            for j in range(len(blockcov)):
+                if onehalfmed >= blockcov[j] and (blockcova[j] >= halfmed or blockcovb[j] >= halfmed):
+                    if blockcova[j] > blockcovb[j]:
+                        highcovs.add('a')
+                        ratios.append(blockcova[j] * 1.0 / blockcov[j])
+                    else:
+                        highcovs.add('b')
+                        ratios.append(blockcovb[j] * 1.0 / blockcov[j])
+            if len(highcovs) > 1:
+                print 'whatthe?'
+                print blocks[i]
+                sys.exit()
             else:
-                mids += 1
+                if 'a' in highcovs:
+                    dominantreads.update(firstreads)
+                    secondaryreads.update(secreads)
+                    goodblocks += 1
+                elif 'b' in highcovs:
+                    dominantreads.update(secreads)
+                    secondaryreads.update(firstreads)
+                    goodblocks += 1
+                else:
+                    mids += 1
         else:
             if not recombblock:
                 lowcovblock += 1
@@ -262,10 +297,13 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
     out.write('end\n')
     out.close()
     totalreads = 0
-    domreads = 0
-    secreads = 0
-    domsam = pysam.Samfile(sys.argv[3] + '.dom.bam', 'wb', template=sam)
-    secsam = pysam.Samfile(sys.argv[3] + '.sec.bam', 'wb', template=sam)
+    domsam = pysam.Samfile(outfile + '.dom.bam', 'wb', template=sam)
+    secsam = pysam.Samfile(outfile + '.sec.bam', 'wb', template=sam)
+    ratios.sort()
+    try:
+        print ratios[0], ratios[len(ratios)/4], ratios[len(ratios)/2], ratios[len(ratios) * 3 / 4], ratios[-1]
+    except:
+        pass
     sys.stdout.write('Writing dominant and secondary strain bam files....\n')
     sys.stdout.flush()
     for read in sam.fetch():
@@ -280,95 +318,135 @@ def groupflow(samfile, vcffile, outfile, minreadsvar=2, minfractvar=0.01, minrea
     sys.stdout.write(str(len(secondaryreads)) + ' assigned to the secondary strain.\n')
     sys.stdout.write('Out of a possible ' + str(totalreads) + ' reads.\n')
     sys.stdout.write('Sorting and indexing BAM files.\n')
-    pysam.sort(sys.argv[3] + '.dom.bam', sys.argv[3] + '.dom.sorted')
-    pysam.index(sys.argv[3] + '.dom.sorted.bam')
-    pysam.sort(sys.argv[3] + '.sec.bam', sys.argv[3] + '.sec.sorted')
-    pysam.index(sys.argv[3] + '.sec.sorted.bam')
+    pysam.sort(outfile + '.dom.bam', outfile + '.dom.sorted')
+    pysam.index(outfile + '.dom.sorted.bam')
+    pysam.sort(outfile + '.sec.bam', outfile + '.sec.sorted')
+    pysam.index(outfile + '.sec.sorted.bam')
 
-def callStrains(bamfile, outname, mincov=5, mincovorig=70):
-    sys.stdout.write('Creating fasta files..\n')
-    origbam = pysam.Samfile(bamfile, 'rb')
-    dombam = pysam.Samfile(outname + '.dom.sorted.bam', 'rb')
-    secbam = pysam.Samfile(outname + '.sec.sorted.bam', 'rb')
-    reflen = int(origbam.lengths[0])
-    refname = origbam.references[0]
-    domlist = ['n' for i in range(reflen)]
-    seclist = ['n' for i in range(reflen)]
-    varbasedom, varbasesec = 0, 0
-    for pileupcolumn in origbam.pileup(refname):
-        varlist = []
+def callStrains(reference, outfile, sam):
+    global halfmed, recombblocklist, onehalfmed
+    subprocess.Popen('samtools mpileup -uf ' + reference + ' ' + outfile + '.dom.sorted.bam | bcftools view -cg -  > ' + outfile + '.dom.pu', shell=True).wait()
+    subprocess.Popen('samtools mpileup -uf ' + reference + ' ' + outfile + '.sec.sorted.bam | bcftools view -cg -  > ' + outfile + '.sec.pu', shell=True).wait()
+    samfile = pysam.Samfile(sam)
+    domseq = ['n' for i in range(samfile.lengths[0])]
+    for pileupcolumn in samfile.pileup():
+        varcounts = {}
+        coverage = 0
         for pileupread in pileupcolumn.pileups:
-            varlist.append(pileupread.alignment.seq[pileupread.qpos:pileupread.qpos +
-                               pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + 1)])
-        coverage = len(varlist)
-        if len(varlist) >= mincovorig:
-            dombase = max(set(varlist), key=varlist.count)
-            dombasecount = varlist.count(dombase)
-            ratio = dombasecount * 1.0 / coverage
-            if ratio >= 0.95 or dombasecount >= coverage - 1:
-                domlist[pileupcolumn.pos] = dombase
-    for pileupcolumn in dombam.pileup(refname):
-        varlist = []
-        for pileupread in pileupcolumn.pileups:
-            varlist.append(pileupread.alignment.seq[pileupread.qpos:pileupread.qpos +
-                               pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + 1)])
-        coverage = len(varlist)
-        if len(varlist) >= mincov:
-            dombase = max(set(varlist), key=varlist.count)
-            dombasecount = varlist.count(dombase)
-            ratio = dombasecount * 1.0 / coverage
-            if ratio >= 0.95 or dombasecount >= coverage - 1:
-                domlist[pileupcolumn.pos] = dombase
+            var = pileupread.alignment.seq[pileupread.qpos:pileupread.qpos +
+                               pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + 1)]
+            coverage += 1
+            if var in varcounts:
+                varcounts[var] += 1
             else:
-                domlist[pileupcolumn.pos] = 'n'
-                varbasedom += 1
-    print set(domlist)
-    print domlist.count('n')
-    for pileupcolumn in secbam.pileup(refname):
-        varlist = []
-        for pileupread in pileupcolumn.pileups:
-            varlist.append(pileupread.alignment.seq[pileupread.qpos:pileupread.qpos +
-                               pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + 1)])
-        coverage = len(varlist)
-        if len(varlist) >= mincov:
-            dombase = max(set(varlist), key=varlist.count)
-            dombasecount = varlist.count(dombase)
-            ratio = dombasecount * 1.0 / coverage
-            if ratio >= 0.95 or dombasecount >= coverage - 1:
-                seclist[pileupcolumn.pos] = dombase
-    domlen, domcount, seclen, seccount = 0, 0, 0, 0
-    domseq = ''.join(domlist)
-    domseq = domseq.split('n')
-    out = open(outname + '.dom.fa', 'w')
-    for i in domseq:
-        if len(i) >= 100:
-            domlen += len(i)
-            domcount += 1
-            out.write('>dom_' + str(domcount) + '\n')
-            for j in range(0, len(i), 60):
-                out.write(i[j:j+60] + '\n')
+                varcounts[var] = 1
+        if coverage >= halfmed:
+            for i in varcounts:
+                if varcounts[i] * 1.0 / coverage >= 0.98:
+                    domseq[pileupcolumn.pos] = i
+    print len(domseq)
+    domfile = open(outfile + '.dom.pu')
+    lastpos = 0
+    count1, count2, count3, count4 = 0, 0, 0, 0
+    for line in domfile:
+        if not line.startswith('#'):
+            chrom, pos, eyed, ref, alt, qual, zefilter, info = line.split()[:8]
+            pos = int(pos)
+            if alt == '.':
+                alt = ref
+            for i in info.split(';'):
+                if i.startswith('FQ='):
+                    quality = - float(i.split('=')[1])
+            if pos == lastpos:
+                domseq[pos-1] = 'n'
+                count1 += 1
+            else:
+                if quality >= 30:
+                    domseq[pos-1] = alt
+            lastpos = pos
+    print len(domseq)
+    domfile.close()
+    secseq = ['n' for i in range(len(domseq))]
+    secfile = open(outfile + '.sec.pu')
+    lastpos = 0
+    for line in secfile:
+        if not line.startswith('#'):
+            chrom, pos, eyed, ref, alt, qual, zefilter, info = line.split()[:8]
+            pos = int(pos)
+            if alt == '.':
+                alt = ref
+            for i in info.split(';'):
+                if i.startswith('FQ='):
+                    quality = - float(i.split('=')[1])
+            if pos == lastpos:
+                secseq[pos-1] = 'n'
+                count2 += 1
+            else:
+                if quality >= 30:
+                    secseq[pos-1] = alt
+                    count3 += 1
+                else:
+                    count4 += 1
+            lastpos = pos
+    print len(domseq)
+    print count1, count2, count3, count4
+    for i in recombblocklist:
+        for j in range(i[0] - 1, i[1]):
+            domseq[j] = 'n'
+            secseq[j] = 'n'
+    domseq = ''.join(domseq)
+    secseq = ''.join(secseq)
+    domseqs = []
+    secseqs = []
+    domslen = []
+    secslen = []
+    for i in domseq.split('nnnnnnnnnn'):
+        seq = i.strip('n')
+        if len(seq) >= 100:
+            domseqs.append(seq)
+            domslen.append(len(seq))
+    for i in secseq.split('nnnnnnnnnn'):
+        seq = i.strip('n')
+        if len(seq) >= 100:
+            secseqs.append(seq)
+            secslen.append(len(seq))
+    sys.stdout.write('\tMax\tnumber\ttotal\n')
+    sys.stdout.write('DOM: ' + str(max(domslen)) + ' ' + str(len(domslen)) + ' ' + str(sum(domslen)) + '\n')
+    try:
+        sys.stdout.write('SEC: ' + str(max(secslen)) + ' ' + str(len(secslen)) + ' ' + str(sum(secslen)) + '\n')
+    except:
+        sys.stdout.write('Not enough coverage to create sequence for secondary strain\n ')
+    out = open(outfile + '.dom.fa', 'w')
+    count = 1
+    for i in domseqs:
+        out.write('>dom_' + str(count) + '\n')
+        for j in range(0, len(i), 60):
+            out.write(i[j:j+60] + '\n')
+        count += 1
     out.close()
-    secseq = ''.join(seclist)
-    secseq = secseq.split('n')
-    out = open(outname + '.sec.fa', 'w')
-    for i in secseq:
-        if len(i) >= 100:
-            seclen += len(i)
-            seccount += 1
-            out.write('>dom_' + str(seccount) + '\n')
-            for j in range(0, len(i), 60):
-                out.write(i[j:j+60] + '\n')
-    sys.stdout.write('Dominant strain has ' + str(domcount) + ' sequences totaling ' + str(domlen) + ' base pairs.\n')
-    sys.stdout.write(str(varbasedom) + ' sites were removed due to variability at the site.\n')
-    sys.stdout.write('Secondary strain has ' + str(seccount) + ' sequences totaling ' + str(seclen) + ' base pairs.\n')
-    sys.stdout.write(str(varbasesec) + ' sites were removed due to variability at the site.\n')
-    sys.stdout.write('groupFlows.py finished.')
+    out = open(outfile + '.sec.fa', 'w')
+    count = 1
+    for i in secseqs:
+        out.write('>sec_' + str(count) + '\n')
+        for j in range(0, len(i), 60):
+            out.write(i[j:j+60] + '\n')
+        count += 1
+    out.close()
+
+
+
+
+
+            
+
+
+
 
 
 
 
 mincov = 5
-minratio = 0.95
+minratio = 0.9
 
 
 if len(sys.argv) < 4 or sys.argv[1] == '-h' or sys.argv[1] == '--help':
@@ -376,7 +454,7 @@ if len(sys.argv) < 4 or sys.argv[1] == '-h' or sys.argv[1] == '--help':
 groupFlows.py
 Written by Mitchell Sullivan (mjsull@gmail.com)
 LICENCE: GPLv3
-USAGE: python groupFlows.py <args> bam_file vcf_file outfile_prefix
+USAGE: python groupFlows.py <args> bam_file vcf_file ref_file outfile_prefix
 Bam file must be ordered and indexed, vcf file should be made using freebayes
 Arguments
 -m minimum coverage minimum coverage for base to be used in outfile
@@ -396,8 +474,8 @@ OUTPUT:
 <prefix>.txt                   list of flows seperated into blocks
 ''')
     sys.exit()
-returned = groupflow(sys.argv[-3], sys.argv[-2], sys.argv[-1])
+returned = groupflow(sys.argv[-4], sys.argv[-3], sys.argv[-1])
 if returned == 0:
      sys.stderr.write('Pysam not found, please install.')
      sys.exit()
-callStrains(sys.argv[-3], sys.argv[-1])
+callStrains(sys.argv[-2], sys.argv[-1], sys.argv[-4])
