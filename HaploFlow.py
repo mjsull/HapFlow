@@ -343,15 +343,13 @@ class App:
                                     x+twidth/2, curry12+lwidth, x+twidth/2, curry12+lwidth,
                                     fill='#9067A7', smooth=1, outline='black')
 
-def getflow(samfile, vcffile, outfile, flowmode=0, skipindels=True):
+def getflow(samfile, vcffile, outfile, maxdist=600, skipindels=True):
     try:
         import pysam
     except:
         return 0
     snps = []
     vcf = open(vcffile)
-    poslist = []
-    flowlist = []
     for line in vcf:
         if not line.startswith('#'):
             chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
@@ -380,71 +378,32 @@ def getflow(samfile, vcffile, outfile, flowmode=0, skipindels=True):
             else:
                 snps.append(aninstance)
     sam = pysam.Samfile(samfile, 'rb')
-    readsref1 = set()
-    readsalt1 = set()
-    readsref2 = set()
-    readsalt2 = set()
-    oldpos1, oldpos2 = None, None
-    somethingelse = 0
+    out = open(outfile, 'w')
+
     for snp in snps:
+        newvars = []
+        for i in thevars:
+            if i[0] < snp.pos - maxdist:
+                out.write('POS\t' + str(i[0]) + '\t' + '\t'.join(i[1:-1]) + '\n')
+                countDict = {}
+                for j in i[-1]:
+                    if i[-1][j] in countDict:
+                        countDict[i[-1][j]] += 1
+                    else:
+                        countDict[i[-1][j]] = 1
+                for j in countDict:
+                    out.write('HAPLO\t' + '\t'.join(map(str, j)) + '\t' + str(countDict[j]) + '\n')
+            else:
+                newvars.append(i)
+        thevars = newvars
         for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
             if pileupcolumn.pos == snp.pos - 1:
                 variants = set(snp.alt.split(','))
                 varlength = len(snp.ref)
-                readsref3 = set()
-                readsalt3 = set()
                 for pileupread in pileupcolumn.pileups:
                     rvar = pileupread.alignment.seq[pileupread.qpos:pileupread.qpos +
                            pileupread.alignment.overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
-                    if flowmode == 0:
-                        if rvar == snp.ref:
-                            readsref3.add(pileupread.alignment.qname)
-                        elif rvar in variants:
-                            readsalt3.add(pileupread.alignment.qname)
-                        else:
-                            somethingelse += 1
-                break
-        ref2ref2ref = len(readsref1.intersection(readsref2).intersection(readsref3))
-        ref2ref2alt = len(readsref1.intersection(readsref2).intersection(readsalt3))
-        ref2alt2ref = len(readsref1.intersection(readsalt2).intersection(readsref3))
-        ref2alt2alt = len(readsref1.intersection(readsalt2).intersection(readsalt3))
-        alt2ref2ref = len(readsalt1.intersection(readsref2).intersection(readsref3))
-        alt2ref2alt = len(readsalt1.intersection(readsref2).intersection(readsalt3))
-        alt2alt2ref = len(readsalt1.intersection(readsalt2).intersection(readsref3))
-        alt2alt2alt = len(readsalt1.intersection(readsalt2).intersection(readsalt3))
-        ref2ref = len(readsref1.intersection(readsref2))
-        ref2alt = len(readsref1.intersection(readsalt2))
-        alt2ref = len(readsalt1.intersection(readsref2))
-        alt2alt = len(readsalt1.intersection(readsalt2))
-        justref = len(readsref1)
-        justalt = len(readsalt1)
-        combo = [ref2ref2ref, ref2ref2alt, ref2alt2alt, ref2alt2ref, alt2ref2alt, alt2ref2ref, alt2alt2ref, alt2alt2alt, ref2ref, ref2alt, alt2ref, alt2alt, justref, justalt]
-        if not oldpos2 is None:
-            flowlist.append(combo)
-            poslist.append(oldpos2)
-        readsalt1 = readsalt2
-        readsref1 = readsref2
-        readsalt2 = readsalt3
-        readsref2 = readsref3
-        oldpos2 = oldpos1
-        oldpos1 = snp.pos
-    ref2ref = len(readsref1.intersection(readsref2))
-    ref2alt = len(readsref1.intersection(readsalt2))
-    alt2ref = len(readsalt1.intersection(readsref2))
-    alt2alt = len(readsalt1.intersection(readsalt2))
-    justref = len(readsref1)
-    justalt = len(readsalt1)
-    combo = [0, 0, 0, 0, 0, 0, 0, 0, ref2ref, ref2alt, alt2ref, alt2alt, justref, justalt]
-    flowlist.append(combo)
-    poslist.append(oldpos2)
-    justref = len(readsref2)
-    justalt = len(readsalt2)
-    flowlist.append([0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, 0, justref, justalt])
-    poslist.append(oldpos1)
-    print somethingelse
-    out = open(outfile, 'w')
-    for i in range(0, len(poslist)):
-        out.write(str(poslist[i]) + '\t' + '\t'.join(map(str, flowlist[i])) + '\n')
+                    
     out.close()
 
 
