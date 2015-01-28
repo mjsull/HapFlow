@@ -5,6 +5,7 @@ import tkSimpleDialog
 import tkFont
 import tkMessageBox
 import random
+import time
 
 
 try:
@@ -76,60 +77,86 @@ class App:
         self.block_height = 60
         self.flowfile = None
         self.maxvar = 2
+        self.currflows = set()
         if len(sys.argv) > 1:
             self.flowfile = sys.argv[1]
             self.load_flow()
 
     def update_frame(self, x2=None):
+        print 0
+        thetime = time.time()
         x1 = self.canvas.canvasx(0)
         if x2 is None:
             x2 = self.canvas.canvasx(self.canvas.winfo_width())
         #print self.canvas.winfo_width(), x1, x2
-        self.canvas.delete(ALL)
+        self.canvas.delete('top')
         indexa = int(x1 / self.xmod/4)
         indexb = int(x2 / self.xmod/4)
         if indexb >= len(self.flowlist):
             indexb = len(self.flowlist) - 1
         positions = []
         suppositions = []
-        for i in range(min([indexa, 0]), indexb + 1):
-            for j in self.flowlist[i]:
-                if j[0] == 0: # if single forward
-                    coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2])) for val in pair]
-                    self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0))
-                elif j[0] == 1: # if single reverse
-                    coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2])) for val in pair]
-                    self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0))
-                elif j[0] == 2: # if pair F F
-                    coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
-                    coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
-                    self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod, coords2[1], coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2))
-                elif j[0] == 3: # if pair F R
-                    coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
-                    coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
-                    self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod, coords2[1], coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2))
-                elif j[0] == 4: # if pair R F
-                    coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
-                    coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
-                    self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod, coords2[1], coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2))
-                elif j[0] == 5: # if pair R R
-                    coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
-                    coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
-                    self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0))
-                    self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod, coords2[1], coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2))
+        toremove = set()
+        for i in self.currflows:
+            if i < indexa -3 or i > indexb + 3:
+                self.canvas.delete(str(i))
+                toremove.add(i)
+        print time.time() - thetime
+        thetime = time.time()
+        for i in toremove:
+            self.currflows.remove(i)
+        print time.time() - thetime
+        thetime = time.time()
+        print 'ding'
+        count = 0
+        for i in range(max([indexa, 0]), indexb + 1):
+            if not i in self.currflows:
+                count += 1
+                self.currflows.add(i)
+                for j in self.flowlist[i]:
+                    if j[0] == 0: # if single forward
+                        coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2])) for val in pair]
+                        self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=str(i))
+                    elif j[0] == 1: # if single reverse
+                        coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2])) for val in pair]
+                        self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=str(i))
+                    elif j[0] == 2: # if pair F F
+                        coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
+                        coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
+                        self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod,
+                                                 coords2[1], coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
+                    elif j[0] == 3: # if pair F R
+                        coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
+                        coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
+                        self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod, coords2[1],
+                                                 coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
+                    elif j[0] == 4: # if pair R F
+                        coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
+                        coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
+                        self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod,
+                                                 coords2[1], coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
+                    elif j[0] == 5: # if pair R R
+                        coords1 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][0]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][0])) for val in pair]
+                        coords2 = [val for pair in zip(map(lambda x: int(x * self.xmod), j[1][1]),map(lambda x: int(x * self.ymod + self.ypos1), j[2][1])) for val in pair]
+                        self.canvas.create_line(coords1, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line(coords2, smooth=True, width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=str(i))
+                        self.canvas.create_line((coords1[-2], coords1[-1], coords1[-2] + 1 * self.xmod, coords1[-1], coords2[0] - 1 * self.xmod,
+                                                 coords2[1], coords2[0], coords2[1]), smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
             xpos = (i + 1) * self.xmod * 4
             if i >= indexa:
                 suppositions.append(xpos)
                 positions.append(self.poslist[i][0])
-                thetext = str(self.poslist[i][0]) + '\n' + '\n'.join(self.poslist[i][1:])
-                self.canvas.create_text(xpos + 4, self.ymod * self.maxcount * (self.maxvar + 2) + self.ypos1 + 5, anchor=NW, text=thetext, font=self.customFont, tags='top')
+               # thetext = str(self.poslist[i][0]) + '\n' + '\n'.join(self.poslist[i][1:])
+               # self.canvas.create_text(xpos + 4, self.ymod * self.maxcount * (self.maxvar + 2) + self.ypos1 + 5, anchor=NW, text=thetext, font=self.customFont, tags='top')
+        print 'dong', count
+        print time.time() - thetime
+        thetime = time.time()
         self.canvas.create_rectangle(x1+10, self.ypossnp + 20, x2 - 10, self.ypossnp, tags='top', fill='#E1974C')
         #positions = positions[1:]
         #suppositions = suppositions[1:]
@@ -137,12 +164,13 @@ class App:
         if len(positions) > 1:
             for i in range(len(positions)):
                 xpos = x1+15 + int((positions[i] - positions[0]) * 1.0 / (positions[-1] - positions[0]) * (x2 - x1 - 30))
-                self.canvas.create_line(suppositions[i], self.ymod * self.maxcount * (self.maxvar + 2) + self.ypos1, suppositions[i], self.ypos1 - 5, xpos, self.ypossnp + 20, xpos, self.ypossnp, tags='top', width=2)
+                self.canvas.create_line(suppositions[i], self.ymod * (self.ypos1 + self.flowend), suppositions[i], self.ypos1 - 5, xpos, self.ypossnp + 20, xpos, self.ypossnp, tags='top', width=2)
             self.canvas.create_rectangle(x1 + 10, self.yposref + 20, x2 - 10, self.yposref, tags='top', fill='#7293CB')
             starto = x1 + 10 + int(positions[0] * 1.0 / self.reflength * (x2 - x1 - 20))
             endo = x1 + 10 + int(positions[-1] * 1.0 / self.reflength * (x2 - x1 - 20))
             self.canvas.create_rectangle(starto, self.yposref + 20, endo, self.yposref, tags='top', fill='#E1974C')
             self.canvas.create_text(x1 + 10, self.ypossnp - 2, anchor=SW, text='SNP block length: ' + str(positions[-1] - positions[0]), font=self.customFont, tags='top')
+        print time.time() - thetime
 
     def create_flow(self):
         pass
@@ -200,7 +228,22 @@ class App:
                 maxvar, self.medcount, self.maxcount = map(int, line.split()[1].split(','))
                 if self.maxvar is None:
                     self.maxvar = maxvar
-        stacks = [[i for i in range(0, int(self.maxcount) * (self.maxvar + 1) + 1, int(self.maxcount))] for i in range(len(initiallist))]
+            elif line.startswith('G'):
+                count = 0
+                cumalative = 0
+                errcount = 0
+                stacker = [0 for i in range(self.maxvar + 1)]
+                for i in map(int, line[1:].rstrip().split(',')):
+                    print i
+                    count += 1
+                    if count > self.maxvar:
+                        errcount += i
+                    else:
+                        cumalative += i
+                        stacker[count] = cumalative
+                self.flowend = errcount + cumalative
+        print stacker, errcount
+        stacks = [stacker[:] for i in range(len(initiallist))]
         for i in range(len(initiallist)):
             self.flowlist.append([])
             if not initiallist[i] is None:
@@ -241,36 +284,6 @@ class App:
                             else:
                                 x2s.append((i + count) * 4 + 3)
                             thedirs += '-'
-                        elif j == 'r' and len(thedirs) == 1:
-                            y1s.append(stacks[i + count][0] + q[0]/2)
-                            y1s.append(stacks[i + count][0] + q[0]/2)
-                            if start:
-                                y1s.append(stacks[i + count][0] + q[0]/2)
-                                start = False
-                            elif not start2:
-                                y1s.append(stacks[i + count][0] + q[0]/2)
-                                x1s.append((i+count + 1) * 4 - 2)
-                            else:
-                                start2 = False
-                            x1s.append((i+count + 1) * 4)
-                            x1s.append((i+count + 1) * 4 + 2)
-                            stacks[i + count][0] += q[0]
-                            count += 1
-                        elif j == 'r' and len(thedirs) == 2:
-                            y2s.append(stacks[i + count][0] + q[0]/2)
-                            y2s.append(stacks[i + count][0] + q[0]/2)
-                            if start:
-                                y2s.append(stacks[i + count][0] + 0 + q[0]/2)
-                                start = False
-                            elif not start2:
-                                y2s.append(stacks[i + count][0] + q[0]/2)
-                                x2s.append((i+count + 1) * 4 - 2)
-                            else:
-                                start2 = False
-                            x2s.append((i+count+1) * 4)
-                            x2s.append((i+count+1) * 4 + 2)
-                            stacks[i + count][0] += q[0]
-                            count += 1
                         elif j == '_':
                             count += 1
                         elif (j == 'x' or int(j) >= self.maxvar) and len(thedirs) == 1:
@@ -304,34 +317,34 @@ class App:
                             stacks[i + count][-1] += q[0]
                             count += 1
                         elif len(thedirs) == 1:
-                            y1s.append(stacks[i + count][int(j) + 1] + q[0]/2)
-                            y1s.append(stacks[i + count][int(j) + 1] + q[0]/2)
+                            y1s.append(stacks[i + count][int(j)] + q[0]/2)
+                            y1s.append(stacks[i + count][int(j)] + q[0]/2)
                             if start:
-                                y1s.append(stacks[i + count][int(j) + 1] + q[0]/2)
+                                y1s.append(stacks[i + count][int(j)] + q[0]/2)
                                 start = False
                             elif not start2:
-                                y1s.append(stacks[i + count][int(j) + 1] + q[0]/2)
+                                y1s.append(stacks[i + count][int(j)] + q[0]/2)
                                 x1s.append((i+count + 1) * 4 - 2)
                             else:
                                 start2 = False
                             x1s.append((i+count+1) * 4)
                             x1s.append((i+count+1) * 4 + 2)
-                            stacks[i + count][int(j) + 1] += q[0]
+                            stacks[i + count][int(j)] += q[0]
                             count += 1
                         else:
-                            y2s.append(stacks[i + count][int(j) + 1] + q[0]/2)
-                            y2s.append(stacks[i + count][int(j) + 1] + q[0]/2)
+                            y2s.append(stacks[i + count][int(j)] + q[0]/2)
+                            y2s.append(stacks[i + count][int(j)] + q[0]/2)
                             if start:
-                                y2s.append(stacks[i + count][int(j) + 1] + q[0]/2)
+                                y2s.append(stacks[i + count][int(j)] + q[0]/2)
                                 start = False
                             elif not start2:
-                                y2s.append(stacks[i + count][int(j) + 1] + q[0]/2)
+                                y2s.append(stacks[i + count][int(j)] + q[0]/2)
                                 x2s.append((i+count + 1) * 4 - 2)
                             else:
                                 start2 = False
                             x2s.append((i+count+1) * 4)
                             x2s.append((i+count+1) * 4 + 2)
-                            stacks[i + count][int(j) + 1] += q[0]
+                            stacks[i + count][int(j)] += q[0]
                             count += 1
                     rc = lambda: random.randint(100,255)
                     color = '#%02X%02X%02X' % (rc(), rc(), rc())
@@ -378,6 +391,8 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
     out = open(outfile, 'w')
     depthcount = []
     maxvar = 0
+    maxeachvar = [] # maximum count for most prevalent variant, second most prevalent variant etc.
+    maxerror = 0 # maximum number of reads with no called variant at a single site
     for line in vcf:
         if not line.startswith('#'):
             chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
@@ -402,7 +417,7 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
             snps.append(aninstance)
     sam = pysam.Samfile(samfile, 'rb')
     reads = {}
-    for snp in snps:
+    for snp in snps: # for each variant in the vcf file
         newflows = {}
         removereads = []
         for i in reads:
@@ -425,13 +440,33 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
         for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
             if pileupcolumn.pos == snp.pos - 1:
                 vardict = {}
+                varorder = []
+                varcount = {}
+                currerr = 0
+                varlength = len(snp.ref)
+                for i in [snp.ref] + snp.alt.split(','):
+                    varcount[i] = 0
+                for pileupread in pileupcolumn.pileups:
+                    rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
+                           pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
+                    if rvar in varcount:
+                        varcount[rvar] += 1
+                    else:
+                        currerr += 1
+                if currerr > maxerror:
+                    maxerror = currerr
+                for i in varcount:
+                    varorder.append((varcount[i], i))
+                varorder.sort(reverse=True)
                 count = 0
-                for i in snp.alt.split(','):
-                    vardict[i] = str(count)
+                for i in varorder:
+                    vardict[i[1]] = str(count)
                     count += 1
                     if len(vardict) > maxvar:
+                        maxeachvar += [0 for x in range(len(vardict) - maxvar)]
                         maxvar = len(vardict)
-                varlength = len(snp.ref)
+                    if i[0] > maxeachvar[count-1]:
+                        maxeachvar[count-1] = i[0]
                 gottenreads = set() # prevent dovetailed paired-end reads recording two variants at a single position
                 for pileupread in pileupcolumn.pileups:
                     readname = pileupread.alignment.query_name
@@ -459,9 +494,7 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
                                 reads[readname].append('+s')
                             else:
                                 reads[readname].append('+')
-                        if rvar == snp.ref:
-                            reads[readname].append('r')
-                        elif rvar in vardict:
+                        if rvar in vardict:
                             reads[readname].append(vardict[rvar])
                         else:
                             reads[readname].append('x')
@@ -488,6 +521,7 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
         out.write('F ' + i + '\n')
     depthcount.sort()
     out.write('I ' + str(maxvar) + ',' + str(depthcount[3*len(depthcount)/4]) + ',' + str(depthcount[-1]) + '\n')
+    out.write('G ' + ','.join(map(str, maxeachvar)) + ',' + str(maxerror) + '\n')
     out.close()
 
 
