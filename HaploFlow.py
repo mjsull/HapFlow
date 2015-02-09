@@ -524,6 +524,7 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
     varlist = []
     lastpos = None
     consflow = {}
+    flownum = 0
     for snp in snps: # for each variant in the vcf file
         newflows = {}
         removereads = []
@@ -541,30 +542,49 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
         for i in newflows:
             newflows2.append(i.strip(',_') + ',' + str(newflows[i]))
         newflows2.sort(key=lambda x: int(x.split(',')[-1]), reverse=True)
-        newflows2.sort(key=lambda x: orderflow(x))
         newflows2.sort(key=lambda x: int(x.split(',')[0]))
         for i in newflows2:
-            # if lastpos == int(x.split(',')[0]) or lastpos is None:
-            #     for j in consflow:
-            #         consensus = True
-            #         for k in range(min([len(j), len(flow)])):
-            #             if j[k] == '_' or flow[k] == '_' or j[k] == flow[k]:
-            #                 pass
-            #             else:
-            #                 consensus = False
-            #         if consensus:
-            #             changeflow = j
-            #             foundone = True
-            #             break
-            #     if foundone:
-            #         # change the flow
-            #     else:
-            #         # create new conflow with new number
-            #
-            # else:
-            #     lastpos = int(x.split(',')[0])
-            #     # remove first pos from consensus flow
-            out.write('F ' + i + ',' + color + '\n')
+            flow = tuple(i.split(',')[1:-1])
+            if lastpos != int(i.split(',')[0]):
+                tempdict = {}
+                for j in consflow:
+                    temp = j[1:]
+                    tempnum = consflow[j]
+                    if not temp == ():
+                        tempdict[temp] = tempnum
+                consflow = tempdict
+                lastpos = int(i.split(',')[0])
+            for j in consflow:
+                consensus = True
+                newflow = j
+                for k in range(min([len(j), len(flow)])):
+                    if j[k] == '_':
+                        if flow[k] != '_':
+                            newflow[k] = flow[k]
+                    elif flow[k] == '_' or j[k] == flow[k]:
+                        pass
+                    else:
+                        consensus = False
+                if consensus:
+                    changeflow = j
+                    foundone = True
+                    break
+            if foundone:
+                tempnum = consflow[changeflow]
+                del consflow[changeflow]
+                if len(changeflow) > (flow):
+                    newflow += changeflow[len(flow):]
+                else:
+                    newflow += flow[len(changeflow)]
+                consflow[newflow] = tempnum
+            else:
+                flownum += 1
+                consflow[flow] = flownum
+                tempnum = flownum
+            out.write('F ' + i + ',' + str(tempnum) + '\n')
+        newflows2.sort(key=lambda x: int(x.split(',')[-1]), reverse=True)
+        newflows2.sort(key=lambda x: orderflow(x))
+        newflows2.sort(key=lambda x: int(x.split(',')[0]))
         for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
             if pileupcolumn.pos == snp.pos - 1:
                 vardict = {}
