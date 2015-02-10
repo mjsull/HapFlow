@@ -82,13 +82,33 @@ class App:
             self.flowfile = sys.argv[1]
             self.load_flow()
 
+    def hsl_to_rgb(self, h, s, l):
+        c = (1 - abs(2*l - 1)) * s
+        x = c * (1 - abs(h *1.0 / 60 % 2 - 1))
+        m = l - c/2
+        if h < 60:
+            r, g, b = c + m, x + m, 0 + m
+        elif h < 120:
+            r, g, b = x + m, c+ m, 0 + m
+        elif h < 180:
+            r, g, b = 0 + m, c + m, x + m
+        elif h < 240:
+            r, g, b, = 0 + m, x + m, c + m
+        elif h < 300:
+            r, g, b, = x + m, 0 + m, c + m
+        else:
+            r, g, b, = c + m, 0 + m, x + m
+        r = int(r * 255)
+        g = int(g * 255)
+        b = int(b * 255)
+
+        return '#%02x%02x%02x' % (r, g, b)
+
+
     def update_frame(self, x2=None):
-        print 0
-        thetime = time.time()
         x1 = self.canvas.canvasx(0)
         if x2 is None:
             x2 = self.canvas.canvasx(self.canvas.winfo_width())
-        #print self.canvas.winfo_width(), x1, x2
         self.canvas.delete('top')
         indexa = int(x1 / self.xmod/4)
         indexb = int(x2 / self.xmod/4)
@@ -101,13 +121,10 @@ class App:
             if i < indexa -3 or i > indexb + 3:
                 self.canvas.delete(str(i))
                 toremove.add(i)
-        print time.time() - thetime
         thetime = time.time()
         for i in toremove:
             self.currflows.remove(i)
-        print time.time() - thetime
         thetime = time.time()
-        print 'ding'
         count = 0
         for i in range(max([indexa, 0]), indexb + 1):
             if not i in self.currflows:
@@ -230,13 +247,7 @@ class App:
                 positions.append(self.poslist[i][0])
                 thetext = str(self.poslist[i][0]) + '\n' + '\n'.join(self.poslist[i][1:])
                 self.canvas.create_text(xpos + 4, self.ymod * (self.ypos1 + self.flowend) + 5, anchor=NW, text=thetext, font=self.customFont, tags='top')
-        print 'dong', count
-        print time.time() - thetime
-        thetime = time.time()
         self.canvas.create_rectangle(x1+10, self.ypossnp + 20, x2 - 10, self.ypossnp, tags='top', fill='#E1974C')
-        #positions = positions[1:]
-        #suppositions = suppositions[1:]
-        #print positions
         if len(positions) > 1:
             for i in range(len(positions)):
                 xpos = x1+15 + int((positions[i] - positions[0]) * 1.0 / (positions[-1] - positions[0]) * (x2 - x1 - 30))
@@ -246,7 +257,6 @@ class App:
             endo = x1 + 10 + int(positions[-1] * 1.0 / self.reflength * (x2 - x1 - 20))
             self.canvas.create_rectangle(starto, self.yposref + 20, endo, self.yposref, tags='top', fill='#E1974C')
             self.canvas.create_text(x1 + 10, self.ypossnp - 2, anchor=SW, text='SNP block start..stop: ' + str(positions[-1]) + '..' + str(positions[0]), font=self.customFont, tags='top')
-        print time.time() - thetime
 
     def create_flow(self):
         pass
@@ -294,15 +304,16 @@ class App:
         for line in flowfile:
             if line.startswith('F'):
                 pos = int(line.split()[1].split(',')[0])
-                count = int(line.split()[1].split(',')[-1])
-                flow = line.split()[1].split(',')[1:-1]
+                count = int(line.split()[1].split(',')[-2])
+                group = int(line.split()[1].split(',')[-1])
+                flow = line.split()[1].split(',')[1:-2]
                 if lf != pos:
                     while self.poslist[len(initiallist)][0] != pos:
                         initiallist.append(None)
-                    initiallist.append([[count, flow]])
+                    initiallist.append([[count, flow, group]])
                     lf = pos
                 else:
-                    initiallist[-1].append([count, flow])
+                    initiallist[-1].append([count, flow, group])
             elif line.startswith('I'):
                 maxvar, self.medcount, self.maxcount = map(int, line.split()[1].split(','))
                 if self.maxvar is None:
@@ -322,14 +333,11 @@ class App:
                 self.flowend = errcount + cumalative
         flowfile.close()
         stacks = [stacker[:] for i in range(len(initiallist))]
+        colordict = {}
+        lastcol = 0
         for i in range(len(initiallist)):
             self.flowlist.append([])
             if not initiallist[i] is None:
-                count = 0
-                for j in self.poslist[i][1:]:
-                    if j.startswith('*'):
-                        refpos = count
-                    count += 1
                 for q in initiallist[i]:
                     thedirs = ''
                     x1s = []
@@ -337,9 +345,6 @@ class App:
                     y1s = []
                     y2s = []
                     count = 0
-                    refpres = False
-                    errpres = False
-                    varpres = False
                     start = False
                     gapped = False
                     for j in q[1]:
@@ -380,7 +385,6 @@ class App:
                             count += 1
                             gapped = True
                         elif (j == 'x' or int(j) >= self.maxvar) and len(thedirs) == 1:
-                            errpres = True
                             y1s.append(stacks[i + count][-1] + q[0]/2)
                             y1s.append(stacks[i + count][-1] + q[0]/2)
                             if start:
@@ -391,7 +395,6 @@ class App:
                             stacks[i + count][-1] += q[0]
                             count += 1
                         elif (j == 'x' or int(j) >= self.maxvar) and len(thedirs) == 2:
-                            errpres = True
                             y2s.append(stacks[i + count][-1] + q[0]/2)
                             y2s.append(stacks[i + count][-1] + q[0]/2)
                             if start:
@@ -402,10 +405,6 @@ class App:
                             stacks[i + count][-1] += q[0]
                             count += 1
                         elif len(thedirs) == 1:
-                            if int(j) == refpos:
-                                refpres = True
-                            else:
-                                varpres = True
                             y1s.append(stacks[i + count][int(j)] + q[0]/2)
                             y1s.append(stacks[i + count][int(j)] + q[0]/2)
                             if start:
@@ -416,10 +415,6 @@ class App:
                             stacks[i + count][int(j)] += q[0]
                             count += 1
                         else:
-                            if int(j) == refpos:
-                                refpres = True
-                            else:
-                                varpres = True
                             y2s.append(stacks[i + count][int(j)] + q[0]/2)
                             y2s.append(stacks[i + count][int(j)] + q[0]/2)
                             if start:
@@ -429,22 +424,15 @@ class App:
                             x2s.append((i+count+1) * 4 + 1)
                             stacks[i + count][int(j)] += q[0]
                             count += 1
-                    rc = lambda: random.randint(0,100)
-                    dc = lambda: random.randint(200,255)
-                    if refpres and errpres and varpres:
-                        color = '#%02X%02X%02X' % (dc(), dc(), dc())
-                    elif refpres and errpres:
-                        color = '#%02X%02X%02X' % (dc(), rc(), dc())
-                    elif refpres and varpres:
-                        color = '#%02X%02X%02X' % (dc(), dc(), rc())
-                    elif varpres and errpres:
-                        color = '#%02X%02X%02X' % (rc(), dc(), dc())
-                    elif refpres:
-                        color = '#%02X%02X%02X' % (dc(), rc(), rc())
-                    elif errpres:
-                        color = '#%02X%02X%02X' % (rc(), rc(), dc())
-                    elif varpres:
-                        color = '#%02X%02X%02X' % (rc(), dc(), rc())
+                    if q[2] in colordict:
+                        h = colordict[q[2]]
+                    else:
+                        h = (lastcol + random.randint(50,60)) % 360
+                        lastcol = h
+                        colordict[q[2]] = h
+                    s = 0.5 #random.random()
+                    l = 0.5 #random.random()
+                    color = self.hsl_to_rgb(h, s, l)
                     if thedirs == '+':
                         self.flowlist[-1].append([0, x1s, y1s, q[0], color, gapped])
                     elif thedirs == '-':
@@ -543,20 +531,30 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
             newflows2.append(i.strip(',_') + ',' + str(newflows[i]))
         newflows2.sort(key=lambda x: int(x.split(',')[-1]), reverse=True)
         newflows2.sort(key=lambda x: int(x.split(',')[0]))
+        newflows3 = []
         for i in newflows2:
-            flow = tuple(i.split(',')[1:-1])
+            flow = tuple(filter(lambda x: not x in ['+s', '+', '-s', '-', 'e'], i.split(',')[1:-1]))
             if lastpos != int(i.split(',')[0]):
                 tempdict = {}
                 for j in consflow:
                     temp = j[1:]
                     tempnum = consflow[j]
                     if not temp == ():
-                        tempdict[temp] = tempnum
+                        if temp in tempdict:
+                            if tempdict[temp][1] < tempnum[1]:
+                                tempdict[temp] = tempnum
+                        else:
+                            tempdict[temp] = tempnum
                 consflow = tempdict
                 lastpos = int(i.split(',')[0])
+            foundone = False
+            print 'ding', flow, int(i.split(',')[-1]), i.split(',')[0]
+            print consflow
+            bestcons = 0
             for j in consflow:
+                print 'dong', j, consflow[j]
                 consensus = True
-                newflow = j
+                newflow = list(j)
                 for k in range(min([len(j), len(flow)])):
                     if j[k] == '_':
                         if flow[k] != '_':
@@ -566,25 +564,36 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
                     else:
                         consensus = False
                 if consensus:
-                    changeflow = j
+                    if consflow[j][1] >= bestcons:
+                        bestcons = consflow[j][1]
+                        changeflow = j
+                        tempnewflow = newflow
+                        print 'fuck'
                     foundone = True
-                    break
             if foundone:
-                tempnum = consflow[changeflow]
+                tempnum = consflow[changeflow][0]
+                tempnum2 = consflow[changeflow][1]
+                print 'dongas', changeflow
                 del consflow[changeflow]
                 if len(changeflow) > (flow):
-                    newflow += changeflow[len(flow):]
+                    tempnewflow += list(changeflow[len(flow):])
                 else:
-                    newflow += flow[len(changeflow)]
-                consflow[newflow] = tempnum
+                    tempnewflow += list(flow[len(changeflow):])
+                print 'dangas', tempnewflow
+                consflow[tuple(tempnewflow)] = (tempnum, max([tempnum2, int(i.split(',')[-1])]))
+                print 'dang', tempnum, changeflow
             else:
                 flownum += 1
-                consflow[flow] = flownum
+                consflow[flow] = (flownum, int(i.split(',')[-1]))
                 tempnum = flownum
-            out.write('F ' + i + ',' + str(tempnum) + '\n')
-        newflows2.sort(key=lambda x: int(x.split(',')[-1]), reverse=True)
-        newflows2.sort(key=lambda x: orderflow(x))
-        newflows2.sort(key=lambda x: int(x.split(',')[0]))
+                print 'wang', flow, flownum
+            newflows3.append(i + ',' + str(tempnum) + '\n')
+        newflows3.sort(key=lambda x: int(x.split(',')[-2]), reverse=True)
+        newflows3.sort(key=lambda x: orderflow(x))
+        newflows3.sort(key=lambda x: int(x.split(',')[0]))
+        for i in newflows3:
+            out.write('F ' + i )
+            #print i
         for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
             if pileupcolumn.pos == snp.pos - 1:
                 vardict = {}
@@ -669,11 +678,58 @@ def getflow(samfile, vcffile, outfile, maxdist=1000):
     for i in newflows:
         newflows2.append(i.strip(',_') + ',' + str(newflows[i]))
     newflows2.sort(key=lambda x: int(x.split(',')[-1]), reverse=True)
-    newflows2.sort(key=lambda x: orderflow(x))
     newflows2.sort(key=lambda x: int(x.split(',')[0]))
+    newflows3 = []
     for i in newflows2:
-        out.write('F ' + i + '\n')
-    depthcount.sort()
+        flow = tuple(filter(lambda x: not x in ['+s', '+', '-s', '-', 'e'], i.split(',')[1:-1]))
+        if lastpos != int(i.split(',')[0]):
+            tempdict = {}
+            for j in consflow:
+                temp = j[1:]
+                tempnum = consflow[j]
+                if not temp == ():
+                    tempdict[temp] = tempnum
+            consflow = tempdict
+            lastpos = int(i.split(',')[0])
+        foundone = False
+        #print 'ding', flow, int(i.split(',')[-1])
+        bestcons = 0
+        for j in consflow:
+         #   print 'dong', j
+            consensus = True
+            newflow = list(j)
+            for k in range(min([len(j), len(flow)])):
+                if j[k] == '_':
+                    if flow[k] != '_':
+                        newflow[k] = flow[k]
+                elif flow[k] == '_' or j[k] == flow[k]:
+                    pass
+                else:
+                    consensus = False
+            if consensus:
+                if consflow[j][1] >= bestcons:
+                    bestcons = consflow[j][1]
+                    changeflow = j
+                foundone = True
+        if foundone:
+            tempnum = consflow[changeflow][0]
+            tempnum2 = consflow[changeflow][1]
+            del consflow[changeflow]
+            if len(changeflow) > (flow):
+                newflow += list(changeflow[len(flow):])
+            else:
+                newflow += list(flow[len(changeflow):])
+            consflow[tuple(newflow)] = (tempnum, max([tempnum2, int(i.split(',')[-1])]))
+        else:
+            flownum += 1
+            consflow[flow] = (flownum, int(i.split(',')[-1]))
+            tempnum = flownum
+        newflows3.append(i + ',' + str(tempnum) + '\n')
+    newflows3.sort(key=lambda x: int(x.split(',')[-2]), reverse=True)
+    newflows3.sort(key=lambda x: orderflow(x))
+    newflows3.sort(key=lambda x: int(x.split(',')[0]))
+    for i in newflows3:
+        out.write('F ' + i)
     for i in varlist:
         out.write(i + '\n')
     out.write('I ' + str(maxvar) + ',' + str(depthcount[3*len(depthcount)/4]) + ',' + str(depthcount[-1]) + '\n')
