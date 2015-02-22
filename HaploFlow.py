@@ -10,6 +10,7 @@ import time
 import os
 import Queue
 import platform
+import webbrowser
 
 try:
     import pysam
@@ -61,7 +62,8 @@ class App:
         self.helpmenu = Menu(self.menubar, tearoff=0)
         self.helpmenu.add_command(label="About", command=self.about)
         self.helpmenu.add_command(label="Help", command=self.help)
-        self.helpmenu.add_command(label="Citing Haploflow", command=self.cite)
+        self.helpmenu.add_command(label="Support", command=self.support)
+        self.helpmenu.add_command(label="Citing", command=self.cite)
         self.menubar.add_cascade(label="Help", menu=self.helpmenu)
         master.config(menu=self.menubar)
         self.currxscroll = 1000
@@ -109,6 +111,7 @@ class App:
             self.load_flow()
         self.queue = Queue.Queue()
         self.rcmenu = Menu(root, tearoff=0)
+        self.rcmenu.add_command(label="Details", command=self.details)
         self.rcmenu.add_command(label="Write flow readnames", command=self.write_flow_names)
         self.rcmenu.add_command(label="Write group readnames", command=self.write_group_names)
         if platform.system() in ['Windows', 'Linux']:
@@ -117,27 +120,220 @@ class App:
             self.canvas.tag_bind('map', '<Button-2>', self.rightClick)
         self.canvas.tag_bind('map', '<Button-1>', self.select_flow)
         self.canvas.bind('<Button-1>', self.remove_rc)
+        self.selected = [None, None, None]
 
 
     def rightClick(self, event):
-        self.rctag = self.canvas.gettags(CURRENT)[0]
+        self.rctag = self.canvas.gettags(CURRENT)
+        self.rcmenu.unpost()
         self.rcmenu.post(event.x_root, event.y_root)
         self.rcpos = (event.x_root, event.y_root)
 
     def select_flow(self, event):
-        print 'ding'
+        pos, num, amap, zecurrent = self.canvas.gettags(CURRENT)
+        thecol = self.canvas.itemcget(CURRENT, 'fill')
+        if not self.selected[0] is None:
+            for i in self.canvas.find_withtag(self.selected[0]):
+                if self.canvas.gettags(i)[1] == self.selected[1]:
+                   self.canvas.itemconfig(i, fill=self.selected[2])
+        if pos == self.selected[0] and num == self.selected[1]:
+            self.selected = [None, None, None]
+        else:
+            for i in self.canvas.find_withtag(pos):
+                if self.canvas.gettags(i)[1] == num:
+                   self.canvas.itemconfig(i, fill='#000000')
+            self.selected = [pos, num, thecol]
         self.rcmenu.unpost()
 
     def remove_rc(self, event):
         self.rcmenu.unpost()
 
+    def find_flow(self, pos, num):
+        flowfile = open(self.flowfile.get())
+        count = 0
+        for line in flowfile:
+            if line.startswith('F'):
+                if line[2:].startswith(pos + ','):
+                    count += 1
+                    if count == num:
+                        flowfile.close()
+                        return line.split()[1]
+
+    def get_names(self, flows, positions):
+        try:
+            import pysam
+        except ImportError:
+            tkMessageBox.showerror('Pysam not installed.', 'This functionality is only available if pysam is isntalled.')
+            return
+        if self.bamfile.get() == '':
+            filename = tkFileDialog.askopenfilename(title='Please select alignment file (BAM)')
+            self.bamfile.set(filename)
+        sam = pysam.Samfile(self.bamfile.get(), 'rb')
+        minsnp = float('inf')
+        maxsnp = 0
+        for i in range(len(flows)):
+            minisnp = int(positions[i])
+            maxisnp = int(positions[i]) + len(filter(lambda x: not x in ['+s', '+', '-s', '-', 'e'], flows[i].split(',')[1:-2])) -1
+            if minisnp < minsnp:
+                minsnp = minisnp
+            if maxisnp > maxsnp:
+                maxsnp = maxisnp
+        snplist = []
+        getit = True
+        minsnp = max([0, minsnp-1])
+        i = minsnp
+        while getit:
+            position = self.poslist[i][0]
+            if position >= self.poslist[maxsnp][0] + self.maxdist.get():
+                getit = False
+            alt = ''
+            for j in self.poslist[i][1:]:
+                if j.startswith('*'):
+                    ref = j[1:]
+                else:
+                    alt += ',' + j
+            alt = alt[1:]
+            aninstance = variation(self.chrom, position, ref, alt, 0)
+            snplist.append(aninstance)
+            i += 1
+        reads = {}
+        for snp in snplist: # for each variant in the vcf file
+            for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
+                if pileupcolumn.pos == snp.pos - 1:
+                    vardict = {}
+                    varorder = []
+                    varcount = {}
+                    currerr = 0
+                    varlength = len(snp.ref)
+                    for i in [snp.ref] + snp.alt.split(','):
+                        varcount[i] = 0
+                    for pileupread in pileupcolumn.pileups:
+                        rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
+                               pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
+                        if rvar in varcount:
+                            varcount[rvar] += 1
+                        else:
+                            currerr += 1
+                    for i in varcount:
+                        varorder.append((varcount[i], i))
+                    varorder.sort(reverse=True)
+                    count = 0
+                    for i in varorder:
+                        vardict[i[1]] = str(count)
+                        count += 1
+                    gottenreads = set() # prevent dovetailed paired-end reads recording two variants at a single position
+                    for pileupread in pileupcolumn.pileups:
+                        readname = pileupread.alignment.query_name
+                        if not readname in gottenreads: # ignore the start of the second pair in dovetailed reads, there might be a better solution to this but would take a long time to implement and wouldn't provide much additional clarity.
+                            rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
+                                   pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
+                            if readname in reads:
+                                if reads[readname][1] != pileupread.alignment.is_read1:
+                                    if pileupread.alignment.is_reverse and pileupread.query_position == 0:
+                                        reads[readname].append('-s')
+                                    elif pileupread.alignment.is_reverse:
+                                        reads[readname].append('-')
+                                    elif pileupread.query_position == 0:
+                                        reads[readname].append('+s')
+                                    else:
+                                        reads[readname].append('+')
+                                    reads[readname][1] = pileupread.alignment.is_read1
+                            else:
+                                reads[readname] = [snp.pos, pileupread.alignment.is_read1]
+                                if pileupread.alignment.is_reverse and pileupread.query_position == 0:
+                                    reads[readname].append('-s')
+                                elif pileupread.alignment.is_reverse:
+                                    reads[readname].append('-')
+                                elif pileupread.query_position == 0:
+                                    reads[readname].append('+s')
+                                else:
+                                    reads[readname].append('+')
+                            if rvar in vardict:
+                                reads[readname].append(vardict[rvar])
+                            else:
+                                reads[readname].append('x')
+                            gottenreads.add(readname)
+                            if pileupread.query_position == pileupread.alignment.query_alignment_end:
+                                reads[readname].append('e')
+                    for i in reads:
+                        if not i in gottenreads:
+                            reads[i].append('_')
+        outset = set()
+        for i in reads:
+            for j in flows:
+                if int(j.split(',')[0]) == reads[i][0] and ','.join(reads[i][2:]).strip(',_') == ','.join(j.split(',')[1:-2]):
+                    outset.add(i)
+        outfile = tkFileDialog.asksaveasfilename(title='Write to BAM')
+        if outfile[-4:] != '.bam':
+            outfile += '.bam'
+        newsam = pysam.Samfile(outfile, 'wb', template=sam)
+        for read in sam.fetch():
+            if read.qname in outset:
+                newsam.write(read)
+        newsam.close()
+        sam.close()
+
+
+    def details(self):
+        pos, num, amap, securrent = self.rctag
+        posnum = int(pos[1:])
+        pos = str(self.poslist[int(pos[1:])][0])
+        num = int(num[1:])
+        flow = self.find_flow(pos, num)
+        try:
+            self.detail_window.destroy()
+        except:
+            pass
+        self.detail_window = Toplevel()
+        splitline = flow.split(',')
+        self.hl1 = Label(self.detail_frame, text='Position:', anchor=E)
+        self.hl1.grid(column=0, row=1)
+        self.he1 = Entry(self.detail_frame, textvariable=StringVar(value=splitline[0]), state='readonly')
+        self.he1.grid(column=1, row=1)
+        self.hl2 = Label(self.detail_frame, text='Flow:', anchor=E)
+        self.hl2.grid(column=0, row=2)
+        self.he2 = Entry(self.detail_frame, textvariable=StringVar(value=', '.join(splitline[1:-2])), state='readonly')
+        self.he2.grid(column=1, row=2)
+        self.hl3 = Label(self.detail_frame, text='Count:', anchor=E)
+        self.hl3.grid(column=0, row=3)
+        self.he3 = Entry(self.detail_frame, textvariable=StringVar(value=splitline[-2]), state='readonly')
+        self.he3.grid(column=1, row=3)
+        self.hl4 = Label(self.detail_frame, text='Group:', anchor=E)
+        self.hl4.grid(column=0, row=4)
+        self.he4 = Entry(self.detail_frame, textvariable=StringVar(value=splitline[-1]), state='readonly')
+        self.he4.grid(column=1, row=4)
+        self.detail_frame.grid(padx=5, pady=5)
 
 
     def write_flow_names(self):
-        print 'dong'
+        pos, num, amap, securrent = self.rctag
+        posnum = int(pos[1:])
+        pos = str(self.poslist[int(pos[1:])][0])
+        num = int(num[1:])
+        flow = self.find_flow(pos, num)
+        self.get_names([flow], [posnum])
+
+    def get_group(self, group):
+        flowfile = open(self.flowfile.get())
+        count = 0
+        flows, posnums = [], []
+        for line in flowfile:
+            if line.startswith('F'):
+                if line[-len(group)-1:] == ',' + group:
+                    flows.append(line.split()[1])
+                    posnums.append(count)
+                count += 1
+        return flows, posnums
+
 
     def write_group_names(self):
-        print 'dang'
+        pos, num, amap, securrent = self.rctag
+        pos = str(self.poslist[int(pos[1:])][0])
+        num = int(num[1:])
+        flow = self.find_flows(pos, num)
+        group = flow.split(',')[-1]
+        flows, posnums = self.get_group(group)
+        self.get_names(flows, posnums)
 
     def hsl_to_rgb(self, h, s, l):
         c = (1 - abs(2*l - 1)) * s
@@ -176,136 +372,136 @@ class App:
         toremove = set()
         for i in self.currflows:
             if i < indexa -3 or i > indexb + 3:
-                self.canvas.delete(str(i))
+                self.canvas.delete('p' + str(i))
                 toremove.add(i)
         thetime = time.time()
         for i in toremove:
             self.currflows.remove(i)
         thetime = time.time()
-        count = 0
         for i in range(max([indexa, 0]), indexb + 1):
             if not i in self.currflows:
-                count += 1
+                count = 0
                 self.currflows.add(i)
                 for j in self.flowlist[i]:
+                    count += 1
                     if j[0] == 0: # if single forward
                         self.canvas.create_line([j[1][0] * self.xmod, j[2][0] * self.ymod + self.ypos1, j[1][1] * self.xmod, j[2][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1]), 2):
                             self.canvas.create_line([(j[1][k-1] - 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1, (j[1][k-1] + 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1,
                                                      (j[1][k] - 1) * self.xmod, j[2][k] * self.ymod + self.ypos1, (j[1][k] + 1) * self.xmod, j[2][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][k] * self.xmod, j[2][k] * self.ymod + self.ypos1, j[1][k+1] * self.xmod, j[2][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 1: # if single reverse
                         self.canvas.create_line([j[1][0] * self.xmod, j[2][0] * self.ymod + self.ypos1, j[1][1] * self.xmod, j[2][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1]), 2):
                             self.canvas.create_line([(j[1][k-1] - 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1, (j[1][k-1] + 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1,
                                                      (j[1][k] - 1) * self.xmod, j[2][k] * self.ymod + self.ypos1, (j[1][k] + 1) * self.xmod, j[2][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][k] * self.xmod, j[2][k] * self.ymod + self.ypos1, j[1][k+1] * self.xmod, j[2][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 2: # if pair F F
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
                             self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
                                                      (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
                             self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
                                                      (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         if j[5]:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=(str(i), 'gapped'), state=self.gapped_state)
+                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
+                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 3: # if pair F R
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
                             self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
                                                      (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
                             self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
                                                      (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         if j[5]:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=(str(i), 'gapped'), state=self.gapped_state)
+                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
+                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 4: # if pair R F
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
                             self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
                                                      (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
                             self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
                                                      (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         if j[5]:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=(str(i), 'gapped'), state=self.gapped_state)
+                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
+                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 5: # if pair R R
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
                             self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
                                                      (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
-                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
                             self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
                                                      (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
-                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=str(i))
+                                                     smooth=True, width=j[3] * self.ymod / 8, fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
-                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=(str(i), 'map'))
+                                                    width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         if j[5]:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=(str(i), 'gapped'), state=self.gapped_state)
+                                                 smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
                             self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
-                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=str(i))
+                                                 smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
             xpos = (i + 1) * self.xmod * 4
             if i >= indexa:
                 suppositions.append(xpos)
@@ -379,7 +575,7 @@ class App:
 
     def ok_flow(self):
         if not os.path.exists(self.bamfile.get()) or not os.path.exists(self.vcffile.get()):
-            tkMessageBox.showerror('File missing', 'Please include a contig and read file.', parent=self.create_edges_top)
+            tkMessageBox.showerror('File missing', 'Please include a contig and read file.', parent=self.create_flow_top)
             return
         try:
             if self.thethread.is_alive():
@@ -496,14 +692,59 @@ class App:
             tkMessageBox.showerror('File not valid', 'Please choose another file.')
         self.canvas.postscript(file=saveas, colormode='color')
 
-    def about(self):
-        pass
-
     def help(self):
-        pass
+        webbrowser.open_new('https://github.com/mjsull/HaploFlow/blob/master/README.md')
+
+    def about(self):
+        try:
+            self.helppanel.destroy()
+        except:
+            pass
+        self.helppanel = Toplevel()
+        self.helppanel.wm_attributes("-topmost", 1)
+        self.helppanel.geometry('+20+30')
+        self.helppanel.title('About')
+        self.frame7 = Frame(self.helppanel)
+        self.about1label = Label(self.frame7, text='HaploFlow', font='TkDefaultFont 13 bold')
+        self.about1label.grid(row=0, column=0)
+        self.about2label = Label(self.frame7, text='HaploFlow is a Python application for visualising\n\
+haplotypes present in sequencing data.\n\n\
+Version 0.1\n')
+        self.about2label.grid(row=1, column=0)
+        self.frame7.grid(padx=10, pady=10)
+
+    def support(self):
+        try:
+            self.helppanel.destroy()
+        except:
+            pass
+        self.helppanel = Toplevel()
+        self.helppanel.wm_attributes("-topmost", 1)
+        self.helppanel.geometry('+20+30')
+        self.helppanel.title('Support')
+        self.frame9 = Frame(self.helppanel)
+        self.about1label1 = Label(self.frame9, text='HaploFlow', font='TkDefaultFont 13 bold')
+        self.about1label1.grid(row=0, column=0)
+        self.supportlabel2 = Label(self.frame9, text='written by Mitchell Sullivan - mjsull@gmail.com\n\
+Please do not hesitate to email with issues or bug reports.')
+        self.supportlabel2.grid(row=1, column=0)
+        self.frame9.grid(padx=10, pady=10)
 
     def cite(self):
-        pass
+        try:
+            self.helppanel.destroy()
+        except:
+            pass
+        self.helppanel = Toplevel()
+        self.helppanel.wm_attributes("-topmost", 1)
+        self.helppanel.geometry('+20+30')
+        self.helppanel.title('Citing')
+        self.frame9 = Frame(self.helppanel)
+        self.about1label1 = Label(self.frame9, text='HaploFlow', font='TkDefaultFont 13 bold')
+        self.about1label1.grid(row=0, column=0)
+        self.supportlabel2 = Label(self.frame9, text='No citation information yet.')
+        self.supportlabel2.grid(row=1, column=0)
+        self.frame9.grid(padx=10, pady=10)
 
     def get_flow_name(self):
         filename = tkFileDialog.askopenfilename()
@@ -554,6 +795,8 @@ class App:
                         cumalative += i
                         stacker[count] = cumalative
                 self.flowend = errcount + cumalative
+            elif line.startswith('C'):
+                self.chrom = line.split()[1]
         flowfile.close()
         stacks = [stacker[:] for i in range(len(initiallist))]
         colordict = {}
@@ -705,7 +948,6 @@ class App:
             outfile = self.flowfile.get()
         if maxdist is None:
             maxdist = self.maxdist.get()
-        print samfile, vcffile, outfile, maxdist
         snps = []
         vcf = open(vcffile)
         out = open(outfile, 'w')
@@ -740,6 +982,7 @@ class App:
                             aninstance.altrat = float(i.split('=')[1])
                 #out.write('V ' + str(pos) + ' ' + ref + ',' + alt + '\n')
                 snps.append(aninstance)
+        out.write('C ' + aninstance.chrom + '\n')
         sam = pysam.Samfile(samfile, 'rb')
         reads = {}
         varlist = []
@@ -954,7 +1197,6 @@ class App:
                 consflow = tempdict
                 lastpos = int(i.split(',')[0])
             foundone = False
-            #print 'ding', flow, int(i.split(',')[-1])
             bestcons = 0
             for j in consflow:
              #   print 'dong', j
@@ -994,7 +1236,6 @@ class App:
             out.write('F ' + i)
         for i in varlist:
             out.write(i + '\n')
-        print depthcount
         out.write('I ' + str(maxvar) + ',' + str(depthcount[3*len(depthcount)/4]) + ',' + str(depthcount[-1]) + '\n')
         out.write('G ' + ','.join(map(str, maxeachvar)) + ',' + str(maxerror) + '\n')
         out.close()
