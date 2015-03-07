@@ -693,20 +693,20 @@ class App:
         self.gapped_state = NORMAL
 
     def stretch_x(self, stuff=None):
+        x1 = self.canvas.canvasx(0)
+        indexa = int(x1 / self.xmod/4)
         self.xmod = self.xmod * 1.0526315789473684210526315789474
         self.currxscroll = self.currxscroll * 1.0526315789473684210526315789474
         self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
-        x1 = self.canvas.canvasx(0)
-        indexa = int(x1 / self.xmod/4)
         self.goto_base(indexa)
 
 
     def shrink_x(self, stuff=None):
+        x1 = self.canvas.canvasx(0)
+        indexa = int(x1 / self.xmod/4)
         self.xmod = self.xmod * 0.95
         self.currxscroll = self.currxscroll * 0.95
         self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
-        x1 = self.canvas.canvasx(0)
-        indexa = int(x1 / self.xmod/4)
         self.goto_base(indexa)
 
     def stretch_y(self, stuff=None):
