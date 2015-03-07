@@ -689,7 +689,11 @@ class App:
             saveas = tkFileDialog.asksaveasfilename(parent=root)
         except IOError:
             tkMessageBox.showerror('File not valid', 'Please choose another file.')
-        self.canvas.postscript(file=saveas, colormode='color')
+        try:
+            import canvasvg
+        except:
+            tkMessageBox.showerror('canvasvg not found', 'Please install canvasvg.')
+        canvasvg.saveall(saveas, self.canvas)
 
     def help(self):
         webbrowser.open_new('https://github.com/mjsull/HaploFlow/blob/master/README.md')
