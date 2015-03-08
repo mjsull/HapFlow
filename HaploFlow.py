@@ -276,7 +276,6 @@ class App:
 
     def details(self):
         pos, num, amap, securrent = self.rctag
-        posnum = int(pos[1:])
         pos = str(self.poslist[int(pos[1:])][0])
         num = int(num[1:])
         flow = self.find_flow(pos, num)
@@ -330,7 +329,7 @@ class App:
         pos, num, amap, securrent = self.rctag
         pos = str(self.poslist[int(pos[1:])][0])
         num = int(num[1:])
-        flow = self.find_flows(pos, num)
+        flow = self.find_flow(pos, num)
         group = flow.split(',')[-1]
         flows, posnums = self.get_group(group)
         self.get_names(flows, posnums)
