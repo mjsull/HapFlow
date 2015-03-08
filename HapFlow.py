@@ -405,7 +405,7 @@ class App:
         if self.xmod == self.lastxmod and self.ymod == self.lastymod:
             toremove = set()
             for i in self.currflows:
-                if i < indexa -3 or i > indexb + 3:
+                if i < indexa -10 or i > indexb + 10:
                     self.canvas.delete('p' + str(i))
                     toremove.add(i)
             for i in toremove:
@@ -555,7 +555,7 @@ class App:
             starto = x1 + 10 + int(positions[0] * 1.0 / self.reflength * (x2 - x1 - 20))
             endo = x1 + 10 + int(positions[-1] * 1.0 / self.reflength * (x2 - x1 - 20))
             self.canvas.create_rectangle(starto, self.yposref + 20, endo, self.yposref, tags='top', fill='#E1974C')
-            self.canvas.create_text(x1 + 10, self.ypossnp - 2, anchor=SW, text='SNP block start..stop: ' + str(positions[-1]) + '..' + str(positions[0]), font=self.customFont, tags='top')
+            self.canvas.create_text(x1 + 10, self.ypossnp - 2, anchor=SW, text='SNP block start..stop: ' + str(positions[0]) + '..' + str(positions[-1]), font=self.customFont, tags='top')
 
     def create_flow(self):
         self.create_flow_top = Toplevel()
@@ -694,15 +694,23 @@ class App:
 
     def stretch_x(self, stuff=None):
         self.xmod = self.xmod * 1.0526315789473684210526315789474
-        self.update_frame()
+        self.currxscroll = self.currxscroll * 1.0526315789473684210526315789474
+        self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
+        x1 = self.canvas.canvasx(0)
+        indexa = int(x1 / self.xmod/4)
+        self.goto_base(indexa)
+
 
     def shrink_x(self, stuff=None):
         self.xmod = self.xmod * 0.95
-        self.update_frame()
+        self.currxscroll = self.currxscroll * 0.95
+        self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
+        x1 = self.canvas.canvasx(0)
+        indexa = int(x1 / self.xmod/4)
+        self.goto_base(indexa)
 
     def stretch_y(self, stuff=None):
         self.ymod = self.ymod * 1.0526315789473684210526315789474
-        print self.ymod
         self.update_frame()
 
     def shrink_y(self, stuff=None):
@@ -712,12 +720,15 @@ class App:
     def quit(self):
         root.quit()
 
-    def goto_base(self):
-        base = tkSimpleDialog.askinteger('Goto base', 'Base number')
-        for i in range(len(self.poslist)):
-            if base < self.poslist[i][0]:
-                fraction = (i-1) * 1.0 / len(self.poslist)
-                break
+    def goto_base(self, fraction=None):
+        if fraction is None:
+            base = tkSimpleDialog.askinteger('Goto base', 'Base number')
+            for i in range(len(self.poslist)):
+                if base < self.poslist[i][0]:
+                    fraction = (i-1) * 1.0 / len(self.poslist)
+                    break
+        else:
+            fraction = (fraction - 1) * 1.0 / len(self.poslist)
         self.canvas.xview_moveto(fraction)
         self.update_frame()
 
