@@ -35,7 +35,21 @@
 <a id="about-hapflow" class="anchor" href="#about-hapflow" aria-hidden="true"><span class="octicon octicon-link"></span></a>About HapFlow</h1>
 
 <p>HapFlow is a python application for visualising haplotypes present in sequencing data. It identifies variant profiles present and reads and creates an abstract visual representation of these profiles to make haplotypes easier to identify.</p>
-< href="https://raw.githubusercontent.com/mjsull/HapFlow/master/images/Sullivan_hapflow_figure.png">
+HapFlow-viewer displays the created flow file on the canvas of the GUI. An orange 
+rectangle within the blue rectangle represents the portion of the genome currently being
+displayed. Underneath, an orange rectangle with vertical lines represents where the variants
+are located within the displayed section of the genome, these lines are extended below and
+spaced an equal distance apart in the area where the flows are viewed. Each flow consisting
+of one or more reads is represented as one or more arrows overlapping each variant line that
+the reads of the flow align to. Width of the arrow represents the number of reads within that
+flow. Variants on the same read of a pair are joined by a solid line, variants on different reads
+of a pair are joined by a dotted line. Arrows grouped at the top of the canvas represent the
+most common variant, the second group of flows represents the second most common variant
+and so on. The last group represents potential sequencing, alignment or variant calling errors
+as they have sequence that has not been called as a variant. Information about the sequence of
+each variant is represented underneath the flows. The canvas is scrollable and zoomable
+allowing the user to easily navigate through whole genomes
+<a href="https://raw.githubusercontent.com/mjsull/HapFlow/master/images/Sullivan_hapflow_figure.png">
   img src="https://raw.githubusercontent.com/mjsull/HapFlow/master/images/Sullivan_hapflow_figure.png" alt="HapFlow Figure">
 </a>
       </section>
