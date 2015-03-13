@@ -6,7 +6,6 @@ import tkSimpleDialog
 import tkFont
 import tkMessageBox
 import random
-import time
 import os
 import Queue
 import platform
@@ -18,10 +17,12 @@ except:
     pass
 import sys
 
+# dummy queue when running in command-line mode strings pushed here will be printed to the console instead of the GUI
 class clqueue:
     def put(self, theval):
         sys.stdout.write(theval + '\n')
 
+# variation class - holds information about variants from the vcf file
 class variation:
     def __init__(self, chrom, pos, ref, alt, qual):
         self.chrom = chrom
@@ -31,6 +32,7 @@ class variation:
         self.qual = qual
 
 
+# Main app
 class App:
     def __init__(self, master):
         if master is None:
@@ -130,13 +132,14 @@ class App:
             self.flowfile.set(sys.argv[1])
             self.load_flow()
 
-
+    # posts menu whwen right click on flow - records position of click
     def rightClick(self, event):
         self.rctag = self.canvas.gettags(CURRENT)
         self.rcmenu.unpost()
         self.rcmenu.post(event.x_root, event.y_root)
         self.rcpos = (event.x_root, event.y_root)
 
+    # color flow black to highlight entire flow
     def select_flow(self, event):
         pos, num, amap, zecurrent = self.canvas.gettags(CURRENT)
         thecol = self.canvas.itemcget(CURRENT, 'fill')
@@ -153,9 +156,11 @@ class App:
             self.selected = [pos, num, thecol]
         self.rcmenu.unpost()
 
+    # remove the right-click menu
     def remove_rc(self, event):
         self.rcmenu.unpost()
 
+    # find flow in the flow file
     def find_flow(self, pos, num):
         flowfile = open(self.flowfile.get())
         count = 0
@@ -167,6 +172,7 @@ class App:
                         flowfile.close()
                         return line.split()[1]
 
+    # get the names of the reads assosciated with a flow or flows
     def get_names(self, flows, positions, BAM=True):
         try:
             import pysam
@@ -289,6 +295,7 @@ class App:
         sam.close()
 
 
+    # create window with details of the flow
     def details(self):
         pos, num, amap, securrent = self.rctag
         pos = str(self.poslist[int(pos[1:])][0])
@@ -320,6 +327,7 @@ class App:
         self.detail_frame.grid(padx=5, pady=5)
 
 
+    # write read names of flow
     def write_flow_names(self):
         pos, num, amap, securrent = self.rctag
         posnum = int(pos[1:])
@@ -328,6 +336,7 @@ class App:
         flow = self.find_flow(pos, num)
         self.get_names([flow], [posnum], False)
 
+    # write bam alignment of flow
     def write_flow_bam(self):
         pos, num, amap, securrent = self.rctag
         posnum = int(pos[1:])
@@ -336,6 +345,7 @@ class App:
         flow = self.find_flow(pos, num)
         self.get_names([flow], [posnum])
 
+    # get all flows associated with group
     def get_group(self, group):
         flowfile = open(self.flowfile.get())
         count = 0
@@ -348,7 +358,7 @@ class App:
                 count += 1
         return flows, posnums
 
-
+    # write bam file of all flows in group
     def write_group_bam(self):
         pos, num, amap, securrent = self.rctag
         pos = str(self.poslist[int(pos[1:])][0])
@@ -358,6 +368,7 @@ class App:
         flows, posnums = self.get_group(group)
         self.get_names(flows, posnums)
 
+    # write read names of all flows in group
     def write_group_names(self):
         pos, num, amap, securrent = self.rctag
         pos = str(self.poslist[int(pos[1:])][0])
@@ -367,7 +378,7 @@ class App:
         flows, posnums = self.get_group(group)
         self.get_names(flows, posnums, False)
 
-
+    # convert hue/saturation/lightness to red green blue
     def hsl_to_rgb(self, h, s, l):
         c = (1 - abs(2*l - 1)) * s
         x = c * (1 - abs(h *1.0 / 60 % 2 - 1))
@@ -390,7 +401,7 @@ class App:
 
         return '#%02x%02x%02x' % (r, g, b)
 
-
+    # update the frame - remove flows not near the frame of focus add flows coming near the frame of focus
     def update_frame(self, x2=None):
         x1 = self.canvas.canvasx(0)
         if x2 is None:
@@ -557,6 +568,7 @@ class App:
             self.canvas.create_rectangle(starto, self.yposref + 20, endo, self.yposref, tags='top', fill='#E1974C')
             self.canvas.create_text(x1 + 10, self.ypossnp - 2, anchor=SW, text='SNP block start..stop: ' + str(positions[0]) + '..' + str(positions[-1]), font=self.customFont, tags='top')
 
+    # open a window that can initiate creating a flow file
     def create_flow(self):
         self.create_flow_top = Toplevel()
         self.create_flow_top.grab_set()
@@ -590,19 +602,22 @@ class App:
         self.okflow.grid(row=4, column=2, sticky=E)
         self.create_flow_frame.grid(padx=10, pady=10)
 
+
+    # ask for bam file name
     def loadbam(self):
         filename = tkFileDialog.askopenfilename(parent=self.create_flow_top)
         if filename == '':
             return
         self.bamfile.set(filename)
 
-
+    # ask for vcf file name
     def loadvcf(self):
         filename = tkFileDialog.askopenfilename(parent=self.create_flow_top)
         if filename == '':
             return
         self.vcffile.set(filename)
 
+    # ask for flow file name
     def loadflow(self):
         filename = tkFileDialog.asksaveasfilename(parent=self.create_flow_top)
         if filename == '':
@@ -610,6 +625,7 @@ class App:
         else:
             self.flowfile.set(filename)
 
+    # initiate the flow file creation process
     def ok_flow(self):
         if not os.path.exists(self.bamfile.get()) or not os.path.exists(self.vcffile.get()):
             tkMessageBox.showerror('File missing', 'Please include a contig and read file.', parent=self.create_flow_top)
@@ -644,9 +660,11 @@ class App:
         self.thethread.start()
         self.update_flow()
 
+    # remove the console
     def ok_console(self):
         self.run_flow_top.destroy()
 
+    # get messages from thread and print to console
     def update_flow(self):
         self.dot_console()
         while self.queue.qsize():
@@ -683,15 +701,17 @@ class App:
         else:
             self.consoletext.set(text + '.')
 
-
+    # hide the paired end connectors for flows that skip a variant
     def hide_gapped(self):
         self.canvas.itemconfig('gapped', state=HIDDEN)
         self.gapped_state = HIDDEN
 
+    # show the connecotrs for flows that skip a variant
     def show_gapped(self):
         self.canvas.itemconfig('gapped', state=NORMAL)
         self.gapped_state = NORMAL
 
+    # stretch flows in the x direction
     def stretch_x(self, stuff=None):
         x1 = self.canvas.canvasx(0)
         indexa = int(x1 / self.xmod/4)
@@ -700,7 +720,7 @@ class App:
         self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
         self.goto_base(indexa)
 
-
+    # shrink flows in the x direction
     def shrink_x(self, stuff=None):
         x1 = self.canvas.canvasx(0)
         indexa = int(x1 / self.xmod/4)
@@ -709,17 +729,21 @@ class App:
         self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
         self.goto_base(indexa)
 
+    # stretch flows in the y direction
     def stretch_y(self, stuff=None):
         self.ymod = self.ymod * 1.0526315789473684210526315789474
         self.update_frame()
 
+    # shrink flows in the y direction
     def shrink_y(self, stuff=None):
         self.ymod = self.ymod * 0.95
         self.update_frame()
 
+    # quit the program
     def quit(self):
         root.quit()
 
+    # ask the user for a base number then go ot the next variant
     def goto_base(self, fraction=None):
         if fraction is None:
             base = tkSimpleDialog.askinteger('Goto base', 'Base number')
@@ -732,6 +756,7 @@ class App:
         self.canvas.xview_moveto(fraction)
         self.update_frame()
 
+    # create and SVG image of the canvas
     def create_image(self):
         try:
             saveas = tkFileDialog.asksaveasfilename(parent=root)
@@ -743,9 +768,11 @@ class App:
             tkMessageBox.showerror('canvasvg not found', 'Please install canvasvg.')
         canvasvg.saveall(saveas, self.canvas)
 
+    # open the hapflow README
     def help(self):
         webbrowser.open_new('https://github.com/mjsull/HapFlow/blob/master/README.md')
 
+    # create a window with information about Hapflow
     def about(self):
         try:
             self.helppanel.destroy()
@@ -764,6 +791,7 @@ Version 0.1\n')
         self.about2label.grid(row=1, column=0)
         self.frame7.grid(padx=10, pady=10)
 
+    # tell people to email me with problems (not sure why I sound so eager)
     def support(self):
         try:
             self.helppanel.destroy()
@@ -781,6 +809,7 @@ Please do not hesitate to email with issues or bug reports.')
         self.supportlabel2.grid(row=1, column=0)
         self.frame9.grid(padx=10, pady=10)
 
+    # create window with citation information
     def cite(self):
         try:
             self.helppanel.destroy()
@@ -797,6 +826,7 @@ Please do not hesitate to email with issues or bug reports.')
         self.supportlabel2.grid(row=1, column=0)
         self.frame9.grid(padx=10, pady=10)
 
+    # ask for flow file name
     def get_flow_name(self):
         filename = tkFileDialog.askopenfilename()
         if filename == '' or filename == ():
@@ -804,6 +834,7 @@ Please do not hesitate to email with issues or bug reports.')
         self.flowfile.set(filename)
         self.load_flow()
 
+    # load a flow file
     def load_flow(self):
         self.poslist = []
         self.flowlist = []
@@ -976,7 +1007,7 @@ Please do not hesitate to email with issues or bug reports.')
         self.update_frame(600)
 
 
-
+    # scroll in x direction
     def xscroll(self, stuff, stuff2, stuff3=None):
         if not stuff3 is None:
             self.canvas.xview_scroll(stuff2, 'units')
@@ -984,6 +1015,7 @@ Please do not hesitate to email with issues or bug reports.')
             self.canvas.xview_moveto(stuff2)
         self.update_frame()
 
+    # create the flow file
     def getflow(self, samfile=None, vcffile=None, outfile=None, maxdist=None):
         try:
             import pysam
@@ -1297,7 +1329,7 @@ Please do not hesitate to email with issues or bug reports.')
         self.queue.put('Flow file successfully created.')
 
 
-
+# order flows so that there is less clutter
 def orderflow(flow):
     flow.replace(',x,', ',20,')
     for i in range(21):
