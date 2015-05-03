@@ -1,0 +1,104 @@
+<!DOCTYPE html PUBLIC "-//W3C//DTD XHTML 1.0 Strict//EN" "http://www.w3.org/TR/xhtml1/DTD/xhtml1-strict.dtd">
+<!--
+Design by TEMPLATED
+http://templated.co
+Released for free under the Creative Commons Attribution License
+
+Name       : Skeleton 
+Description: A two-column, fixed-width design with dark color scheme.
+Version    : 1.0
+Released   : 20130902
+
+-->
+<html xmlns="http://www.w3.org/1999/xhtml">
+<head>
+<meta http-equiv="Content-Type" content="text/html; charset=utf-8" />
+<title>HapFlow - Tutorials</title>
+<meta name="keywords" content="" />
+<meta name="description" content="" />
+<link href="http://fonts.googleapis.com/css?family=Source+Sans+Pro:200,300,400,600,700,900" rel="stylesheet" />
+<link href="default.css" rel="stylesheet" type="text/css" media="all" />
+<link href="fonts.css" rel="stylesheet" type="text/css" media="all" />
+
+<!--[if IE 6]><link href="default_ie6.css" rel="stylesheet" type="text/css" /><![endif]-->
+
+</head>
+<body>
+<div id="page" class="container">
+	<div id="header">
+		<div id="logo">
+			<img src="images/logo.gif" alt="" />
+			<h1><a href="http://mjsull.github.io">mjsull.github.io</a></h1>
+		</div>
+		<div id="menu">
+			<ul>
+				<li><a href="http://mjsull.github.io/HapFlow" accesskey="1" title="">Homepage</a></li>
+				<li><a href="files.html" accesskey="2" title="">Downloads</a></li>
+				<li class="current_page_item"><a href="tutorials.html" accesskey="3" title="">Tutorials</a></li>
+				<li><a href="reference.html" accesskey="4" title="">Citing</a></li>
+			</ul>
+		</div>
+	</div>
+	<div id="main">
+		<div id="banner">
+			<img src="images/hapflow.png" alt="" class="image-full" />
+		</div>
+		<div id="welcome">
+			<div class="title">
+				<h2>HapFlow</h2>
+				<span class="byline">Visualising haplotypes in sequencing data.</span>
+			</div>
+			<p> 	<a href="#quickstart">Quickstart</a><br />
+					<a href="#tutorial1">Tutorial 1 - Exploring a premade flow file.</a><br />
+					<a href="#tutorial1">Tutorial 2 - Creating a flow file.</a></p>
+			<hr>
+			<div id='quickstart'><a name='quickstart'></a></div>
+			<h3>Quick Start</h3>
+			<h4>Loading and interpreting a flow file</h4>
+			<span>To load a flow file simply select File -> Load Flow from the menu.</span><br /> <br />
+			<img src="images/intro.png" alt="" class="image-full" />
+			<p><strong>Interpreting the flow file.</strong> HapFlow determines the variant profiles of all reads. It then creates a flow
+			for each unique variant profile. Each flow represents a read or reads with that variant profile. Width of the flow
+			indicates the proportion of reads with the profile. Black vertical lines indicate variants and position of the flow in the Y axis 
+			indicates which variant is present at that position in the flow. Direction of the arrow indicates the direction of the reads from 
+			which the flow was created.</p>
+			<h4>Creating a flow file (GUI)</h4>
+			<p> To create a flow file you will need an indexed BAM file and a VCF file of called variants. For instructions on how to create a
+			indexed BAM and VCF file see Tutorial 2.<br /><br /> <strong>Please note:</strong> Some variant callers are designed to run on sequencing 
+			from diploid cells and assume variants will be present at either 50% or 100% of your reads. These programs are not suitable for
+			detecting variants in mixed strain bacterial samples. We recommend using <a href="https://github.com/ekg/freebayes"> FreeBayes </a>
+			<br /><br />
+			To create a Flow file from the GUI simply go to File->Create Flow and select an indexed BAM file, a VCF file and your output file.
+			</p>
+			<h4>Creating a flow file (command-line)</h4>
+			<p></p>	
+			<hr>
+			<div id='tutorial1'><a name='tutorial1'></a></div>
+			<h3> Tutorial 1 - Exploring a premade flow file.</h3>
+			<p>coming soon</p>
+			<div id='tutorial1'><a name='tutorial1'></a></div>
+			<h3> Tutorial 2 - Creating a flow file.</h3>
+			<p>coming soon</p>
+		</div>
+		<div id="copyright">
+			<span>&copy; Mitchell J Sullivan</span>
+			<span>Design by <a href="http://templated.co" rel="nofollow">TEMPLATED</a>.</span>
+		</div>
+	</div>
+</div>
+<script>
+<script type="text/javascript">
+
+  var _gaq = _gaq || [];
+  _gaq.push(['_setAccount', 'UA-60488885-1']);
+  _gaq.push(['_trackPageview']);
+
+  (function() {
+    var ga = document.createElement('script'); ga.type = 'text/javascript'; ga.async = true;
+    ga.src = ('https:' == document.location.protocol ? 'https://ssl' : 'http://www') + '.google-analytics.com/ga.js';
+    var s = document.getElementsByTagName('script')[0]; s.parentNode.insertBefore(ga, s);
+  })();
+
+</script>
+</body>
+</html>
