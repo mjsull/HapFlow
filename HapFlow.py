@@ -42,6 +42,7 @@ class App:
                 maxdist = 1000
             self.getflow(sys.argv[2], sys.argv[3], sys.argv[4], maxdist)
             return
+        self.otu=0
         self.menubar = Menu(master)
         self.filemenu = Menu(self.menubar, tearoff=0)
         self.filemenu.add_command(label="Create flow file", command=self.create_flow)
@@ -50,8 +51,20 @@ class App:
         self.filemenu.add_command(label="Exit", command=self.quit)
         self.menubar.add_cascade(label="File", menu=self.filemenu)
         self.toolmenu = Menu(self.menubar, tearoff=0)
+        self.otumenu = Menu(self.toolmenu, tearoff=0)
         self.toolmenu.add_command(label="Goto base", command=self.goto_base)
         self.toolmenu.add_command(label="Create image", command=self.create_image)
+        self.otumenu.add_radiobutton(label="OTU 1", selectcolor='black', variable=self.otu, value=0)
+        self.otumenu.add_radiobutton(label="OTU 2", selectcolor='black', variable=self.otu, value=1)
+        self.otumenu.add_radiobutton(label="OTU 3", selectcolor='black', variable=self.otu, value=2)
+        self.otumenu.add_radiobutton(label="OTU 4", selectcolor='black', variable=self.otu, value=3)
+        self.otumenu.add_radiobutton(label="OTU 5", selectcolor='black', variable=self.otu, value=4)
+        self.otumenu.add_radiobutton(label="OTU 6", selectcolor='black', variable=self.otu, value=5)
+        self.otumenu.add_radiobutton(label="OTU 7", selectcolor='black', variable=self.otu, value=6)
+        self.otumenu.add_radiobutton(label="OTU 8", selectcolor='black', variable=self.otu, value=7)
+        self.otumenu.add_radiobutton(label="OTU 9", selectcolor='black', variable=self.otu, value=8)
+        self.otumenu.add_radiobutton(label="OTU 10", selectcolor='black', variable=self.otu, value=9)
+        self.toolmenu.add_cascade(label="Mark OTU", menu=self.otumenu)
         self.menubar.add_cascade(label="Tools", menu=self.toolmenu)
         self.viewmenu = Menu(self.menubar, tearoff=0)
         self.viewmenu.add_command(label="Hide gapped", command=self.hide_gapped)
@@ -120,6 +133,7 @@ class App:
         else:
             self.canvas.tag_bind('map', '<Button-2>', self.rightClick)
         self.canvas.tag_bind('map', '<Button-1>', self.select_flow)
+        self.canvas.bind('<Double-Button-1>', self.select_otu)
         self.canvas.bind('<Button-1>', self.remove_rc)
         root.bind('w', self.stretch_y)
         root.bind('s', self.shrink_y)
@@ -128,6 +142,7 @@ class App:
         self.selected = [None, None, None]
         self.lastxmod = None
         self.lastymod = None
+        self.otus = [[] for i in range(10)]
         if len(sys.argv) == 2:
             self.flowfile.set(sys.argv[1])
             self.load_flow()
@@ -155,6 +170,16 @@ class App:
                    self.canvas.itemconfig(i, fill='#000000')
             self.selected = [pos, num, thecol]
         self.rcmenu.unpost()
+
+    def select_otu(self, event):
+        if self.otus[self.otu] == []:
+            absx, absy = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+            xindex = int((absx+self.xmod*2) / self.xmod/4)
+            xcoord = (xindex) * self.xmod * 4
+            print absx, xindex, xcoord, self.stacker, self.ypos1, self.ymod
+            print absy, self.ypos1 + self.stacker[0]*self.ymod, self.ypos1 + self.stacker[1]*self.ymod, self.ypos1 + self.stacker[2]*self.ymod
+            self.canvas.create_rectangle(xcoord, 400, xcoord+100, 500)
+
 
     # remove the right-click menu
     def remove_rc(self, event):
@@ -567,7 +592,7 @@ class App:
             endo = x1 + 10 + int(positions[-1] * 1.0 / self.reflength * (x2 - x1 - 20))
             self.canvas.create_rectangle(starto, self.yposref + 20, endo, self.yposref, tags='top', fill='#E1974C')
             self.canvas.create_text(x1 + 10, self.ypossnp - 2, anchor=SW, text='SNP block start..stop: ' + str(positions[0]) + '..' + str(positions[-1]), font=self.customFont, tags='top')
-
+    
     # open a window that can initiate creating a flow file
     def create_flow(self):
         self.create_flow_top = Toplevel()
@@ -868,19 +893,19 @@ Please do not hesitate to email with issues or bug reports.')
                 count = 0
                 cumalative = 0
                 errcount = 0
-                stacker = [0 for i in range(self.maxvar + 1)]
+                self.stacker = [0 for i in range(self.maxvar + 1)]
                 for i in map(int, line[1:].rstrip().split(',')):
                     count += 1
                     if count > self.maxvar:
                         errcount += i
                     else:
                         cumalative += i
-                        stacker[count] = cumalative
+                        self.stacker[count] = cumalative
                 self.flowend = errcount + cumalative
             elif line.startswith('C'):
                 self.chrom = line.split()[1]
         flowfile.close()
-        stacks = [stacker[:] for i in range(len(initiallist))]
+        stacks = [self.stacker[:] for i in range(len(initiallist))]
         colordict = {}
         lastcol = 0
         lastcol2 = 0
