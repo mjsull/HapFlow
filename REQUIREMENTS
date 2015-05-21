@@ -1,0 +1,3 @@
+pysam >= 0.8.1
+Tkinter >= 8.6
+canvassvg >= 1.0.0

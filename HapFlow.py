@@ -1,3 +1,11 @@
+#!/usr/bin/env python
+# HapFlow   Written by: Mitchell Sullivan   mjsull@gmail.com
+# Supervisor: Dr. Adam Polkinghorne
+# Version 1.1.0 08.01.2014
+# License: GPLv3
+
+
+
 __author__ = 'mjsull'
 from Tkinter import *
 import threading
@@ -10,17 +18,13 @@ import os
 import Queue
 import platform
 import webbrowser
-
-try:
-    import pysam
-except:
-    pass
 import sys
 
 # dummy queue when running in command-line mode strings pushed here will be printed to the console instead of the GUI
 class clqueue:
     def put(self, theval):
         sys.stdout.write(theval + '\n')
+
 
 # variation class - holds information about variants from the vcf file
 class variation:
@@ -38,15 +42,30 @@ class App:
         if master is None:
             try:
                 maxdist = int(sys.argv[5])
-            except:
+            except IndexError:
                 maxdist = 1000
-            self.getflow(sys.argv[2], sys.argv[3], sys.argv[4], maxdist)
+            try:
+                import pysam
+            except ImportError:
+                sys.stderr.write('pysam not found, please install.')
+                return
+            testbam = pysam.Samfile(sys.argv[2], 'rb')
+            references = testbam.references
+            testbam.close()
+            for i, j in enumerate(references):
+                self.theref = j
+                self.getflow(sys.argv[2], sys.argv[3], sys.argv[4] + '.' + str(i) + '.flw', maxdist)
             return
-        self.otu=0
+        self.otu = IntVar(value=0)
+        self.flowlist = None
+        self.otufilename = StringVar(value='')
+        self.writeotu_options = StringVar(value='Assign reads to multiple OTUs')
         self.menubar = Menu(master)
         self.filemenu = Menu(self.menubar, tearoff=0)
         self.filemenu.add_command(label="Create flow file", command=self.create_flow)
         self.filemenu.add_command(label="Load flow file", command=self.get_flow_name)
+        self.filemenu.add_separator()
+        self.filemenu.add_command(label="Change max. variants", command=self.change_max_variants)
         self.filemenu.add_separator()
         self.filemenu.add_command(label="Exit", command=self.quit)
         self.menubar.add_cascade(label="File", menu=self.filemenu)
@@ -65,6 +84,7 @@ class App:
         self.otumenu.add_radiobutton(label="OTU 9", selectcolor='black', variable=self.otu, value=8)
         self.otumenu.add_radiobutton(label="OTU 10", selectcolor='black', variable=self.otu, value=9)
         self.toolmenu.add_cascade(label="Mark OTU", menu=self.otumenu)
+        self.toolmenu.add_command(label="Write OTUs", command=self.write_otus)
         self.menubar.add_cascade(label="Tools", menu=self.toolmenu)
         self.viewmenu = Menu(self.menubar, tearoff=0)
         self.viewmenu.add_command(label="Hide gapped", command=self.hide_gapped)
@@ -84,7 +104,9 @@ class App:
         self.currxscroll = 1000
         self.curryscroll = 5000
         self.fontsize = 10 # When zooming in/out font does scale, we create a custom font and then change the font size when we zoom
+        self.fontsize2 = 20
         self.customFont = tkFont.Font(family="Courier", size=self.fontsize)
+        self.customFont2 = tkFont.Font(family="Courier", size=self.fontsize2, weight='bold')
         self.mainframe = Frame(master)
         master.grid_rowconfigure(0, weight=1)
         master.grid_columnconfigure(0, weight=1)
@@ -139,15 +161,16 @@ class App:
         root.bind('s', self.shrink_y)
         root.bind('a', self.shrink_x)
         root.bind('d', self.stretch_x)
+        self.canvas.bind('<Configure>', self.update_frame)
         self.selected = [None, None, None]
         self.lastxmod = None
         self.lastymod = None
-        self.otus = [[] for i in range(10)]
+        self.otus = [[None, [], []] for i in range(10)]
         if len(sys.argv) == 2:
             self.flowfile.set(sys.argv[1])
             self.load_flow()
 
-    # posts menu whwen right click on flow - records position of click
+    # posts menu when right click on flow - records position of click
     def rightClick(self, event):
         self.rctag = self.canvas.gettags(CURRENT)
         self.rcmenu.unpost()
@@ -171,14 +194,140 @@ class App:
             self.selected = [pos, num, thecol]
         self.rcmenu.unpost()
 
+    def change_max_variants(self):
+        x = tkSimpleDialog.askinteger('Change max. variants.', 'Please choose maximum variants per site to show.')
+        self.maxvar = x
+
+    def write_otus(self):
+        try:
+            self.write_otu.destroy()
+        except:
+            pass
+        self.write_otu = Toplevel()
+        self.write_otu.grab_set()
+        self.write_otu.wm_attributes("-topmost", 1)
+        self.otuframe = Frame(self.write_otu)
+        self.write_otu.geometry('+20+30')
+        self.write_otu.title('Write OTUs to SAM')
+        self.samfilenamelabel = Label(self.otuframe, text='Original BAM file:', anchor=E)
+        self.samfilenamelabel.grid(column=0, row=0, sticky=E)
+        self.samfilenameentry = Entry(self.otuframe, textvariable=self.bamfile)
+        self.samfilenameentry.grid(column=1, row=0, sticky=EW)
+        self.samfilebutton = Button(self.otuframe, text='...', command=self.load_bam)
+        self.samfilebutton.grid(column=2, row=0)
+        self.otufilenamelabel = Label(self.otuframe, text='Prefix for output BAM files:', anchor=E)
+        self.otufilenamelabel.grid(column=0, row=1, sticky=E)
+        self.otufilenameentry = Entry(self.otuframe, textvariable=self.otufilename)
+        self.otufilenameentry.grid(column=1, row=1, sticky=EW)
+        self.otufilebutton = Button(self.otuframe, text='...', command=self.load_otubam)
+        self.otufilebutton.grid(column=2, row=1)
+        self.otuopt = OptionMenu(self.otuframe, self.writeotu_options, 'Assign reads to multiple OTUs', 'Ignore reads with multiple OTUs')
+        self.otuopt.grid(column=0, row=2, columnspan=2)
+        self.okotu = Button(self.otuframe, text='Ok', command=self.ok_otu)
+        self.okotu.grid(column=1, row=3, sticky=E)
+        self.otuframe.grid(padx=10, pady=10)
+
+
+    def load_bam(self):
+        filename = tkFileDialog.askopenfilename(title='Please select alignment file (BAM) from which flow was generated.')
+        self.bamfile.set(filename)
+
+    def load_otubam(self):
+        filename = tkFileDialog.asksaveasfilename(title='Prefix for output BAM files.')
+        self.otufilename.set(filename)
+
+    def ok_otu(self):
+        if self.bamfile.get() == '':
+            tkMessageBox.showerror('BAM file not found.', 'Please select valid BAM file.')
+            return
+        if self.otufilename.get() == '':
+            tkMessageBox.showerror('Prefix not found.', 'Please select valid prefix.')
+            return
+        self.write_otu.destroy()
+        varnum = 0
+        lastvar = ''
+        outflows = [[] for i in range(10)]
+        outpos = [[] for i in range(10)]
+        with open(self.flowfile.get()) as f:
+            for line in f:
+                if line.startswith('F '):
+                    outflow = line.split()[1]
+                    pos = outflow.split(',')[0]
+                    flow = filter(lambda x: not x in ['+s', '+', '-s', '-', 'e'], outflow.split(',')[1:-2])
+                    if pos != lastvar:
+                        varnum += 1
+                        lastvar = pos
+                    getotus = None
+                    for theotu, i in enumerate(self.otus):
+                        if not i[0] is None and varnum >= i[0] and varnum + len(flow) <= i[0] + len(i[1]):
+                            compflow = map(str, i[1][varnum - i[0]:])
+                            gotit = True
+                            for j, k in enumerate(flow):
+                                if k == '_' or k == compflow[j] or (k == 'x' and compflow[j] == self.maxvar + 1) or (k > self.maxvar and compflow[j] == self.maxvar + 1):
+                                    pass
+                                else:
+                                    gotit = False
+                                    break
+                            if gotit and self.writeotu_options.get() == 'Assign reads to multiple OTUs':
+                                outflows[theotu].append(outflow)
+                                outpos[theotu].append(varnum - 1)
+                            elif gotit:
+                                if getotus is None:
+                                    getotus = theotu
+                                else:
+                                    break
+                        if self.writeotu_options.get() != 'Assign reads to multiple OTUs' and not getotus is None:
+                            outflows[getotus].append(outflow)
+        for i, j in enumerate(outflows):
+            if len(j) > 0:
+                if os.path.exists(self.otufilename.get() + '.' + str(i+1) + '.bam'):
+                    answer = tkMessageBox.askyesno('File already exists', 'Overwrite ' + self.otufilename.get() + '.' + str(i+1) + '.bam')
+                    if not answer:
+                        return
+                self.get_names(j, outpos[i], True, self.otufilename.get() + '.' + str(i+1) + '.bam')
+
+
+
     def select_otu(self, event):
-        if self.otus[self.otu] == []:
-            absx, absy = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
-            xindex = int((absx+self.xmod*2) / self.xmod/4)
-            xcoord = (xindex) * self.xmod * 4
-            print absx, xindex, xcoord, self.stacker, self.ypos1, self.ymod
-            print absy, self.ypos1 + self.stacker[0]*self.ymod, self.ypos1 + self.stacker[1]*self.ymod, self.ypos1 + self.stacker[2]*self.ymod
-            self.canvas.create_rectangle(xcoord, 400, xcoord+100, 500)
+        absx, absy = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
+        xnum = int((absx+self.xmod*2) / self.xmod/4)
+        xcoord = (xnum) * self.xmod * 4 - self.xmod * 2
+        for i, j in enumerate(self.stacker):
+            if absy <= self.ypos1 + j*self.ymod:
+                ynum = i-1
+                break
+        if absy >= self.ypos1 + self.stacker[-1]*self.ymod:
+            ynum = len(self.stacker) - 1
+        if ynum != -1:
+            stacknum = (xnum - 1) * (self.maxvar + 1) + ynum
+            ycoord = self.ypos1 + self.stacker[ynum] * self.ymod + int(self.otustack[(xnum - 1) * (self.maxvar + 1) + ynum]) * self.fontsize2
+            if self.otus[self.otu.get()][1] == []:
+                #self.otus[self.otu.get()][2].append(self.canvas.create_oval(xcoord, ycoord, xcoord+self.otu_marker_size * self.ymod, ycoord+self.otu_marker_size * self.ymod, fill='blue'))
+                self.otus[self.otu.get()][2].append(self.canvas.create_text(xcoord, ycoord, anchor=NW, text=str(self.otu.get()+1), font=self.customFont2, tags='otus'))
+                self.otus[self.otu.get()][0] = xnum
+                self.otus[self.otu.get()][1].append(ynum)
+                self.otustack = self.otustack[:stacknum] + str(int(self.otustack[stacknum]) + 1) + self.otustack[stacknum+1:]
+            elif xnum == self.otus[self.otu.get()][0] - 1:
+                self.otus[self.otu.get()][2].insert(0, self.canvas.create_text(xcoord, ycoord, anchor=NW, text=str(self.otu.get()+1), font=self.customFont2, tags='otus'))
+                self.otus[self.otu.get()][0] = xnum
+                self.otus[self.otu.get()][1].insert(0, ynum)
+                self.otustack = self.otustack[:stacknum] + str(int(self.otustack[stacknum]) + 1) + self.otustack[stacknum+1:]
+            elif xnum == self.otus[self.otu.get()][0] + len(self.otus[self.otu.get()][1]):
+                self.otus[self.otu.get()][2].append(self.canvas.create_text(xcoord, ycoord, anchor=NW, text=str(self.otu.get()+1), font=self.customFont2, tags='otus'))
+                self.otus[self.otu.get()][1].append(ynum)
+                self.otustack = self.otustack[:stacknum] + str(int(self.otustack[stacknum]) + 1) + self.otustack[stacknum+1:]
+            elif xnum == self.otus[self.otu.get()][0]:
+                self.canvas.delete(self.otus[self.otu.get()][2][0])
+                self.otus[self.otu.get()][2].pop(0)
+                self.otus[self.otu.get()][1].pop(0)
+                self.otus[self.otu.get()][0] += 1
+                self.otustack[stacknum] = self.otustack[:stacknum] + str(int(self.otustack[stacknum]) - 1) + self.otustack[stacknum+1:]
+            elif xnum == self.otus[self.otu.get()][0] + len(self.otus[self.otu.get()][1]) - 1:
+                self.canvas.delete(self.otus[self.otu.get()][2][-1])
+                self.otus[self.otu.get()][2].pop()
+                self.otus[self.otu.get()][1].pop()
+                self.otustack = self.otustack[:stacknum] + str(int(self.otustack[stacknum]) - 1) + self.otustack[stacknum+1:]
+
 
 
     # remove the right-click menu
@@ -197,8 +346,8 @@ class App:
                         flowfile.close()
                         return line.split()[1]
 
-    # get the names of the reads assosciated with a flow or flows
-    def get_names(self, flows, positions, BAM=True):
+    # get the names of the reads associated with a flow or flows
+    def get_names(self, flows, positions, BAM=True, outfile=None):
         try:
             import pysam
         except ImportError:
@@ -207,7 +356,14 @@ class App:
         if self.bamfile.get() == '':
             filename = tkFileDialog.askopenfilename(title='Please select alignment file (BAM) from which flow was generated.')
             self.bamfile.set(filename)
-        sam = pysam.Samfile(self.bamfile.get(), 'rb')
+        try:
+            sam = pysam.Samfile(self.bamfile.get(), 'rb')
+        except IOError:
+            tkMessageBox.showerror('File not found', 'Please select a valid BAM file.')
+            return
+        except ValueError:
+            tkMessageBox.showerror('File not BAM file', 'Please make sure the file is a valid, indexed BAM file.')
+            return
         minsnp = float('inf')
         maxsnp = 0
         for i in range(len(flows)):
@@ -303,17 +459,27 @@ class App:
                 if int(j.split(',')[0]) == reads[i][0] and ','.join(reads[i][2:]).strip(',_') == ','.join(j.split(',')[1:-2]):
                     outset.add(i)
         if BAM:
-            outfile = tkFileDialog.asksaveasfilename(title='Choose path to write alignments to (BAM).')
+            if outfile is None:
+                outfile = tkFileDialog.asksaveasfilename(title='Choose path to write alignments to (BAM).')
             if outfile[-4:] != '.bam':
                 outfile += '.bam'
-            newsam = pysam.Samfile(outfile, 'wb', template=sam)
+            try:
+                newsam = pysam.Samfile(outfile, 'wb', template=sam)
+            except IOError:
+                tkMessageBox.showerror('File not valid', 'Please select a valid output file.')
+                return
             for read in sam.fetch():
                 if read.qname in outset:
                      newsam.write(read)
             newsam.close()
         else:
-            outfile = tkFileDialog.asksaveasfilename(title='Choose path to write read names to.')
-            out = open(outfile, 'w')
+            if outfile is None:
+                outfile = tkFileDialog.asksaveasfilename(title='Choose path to write read names to.')
+            try:
+                out = open(outfile, 'w')
+            except IOError:
+                tkMessageBox.showerror('File not valid', 'Please select a valid output file.')
+                return
             for i in outset:
                 out.write(i + '\n')
             out.close()
@@ -377,7 +543,7 @@ class App:
         flows, posnums = [], []
         for line in flowfile:
             if line.startswith('F'):
-                if line[-len(group)-1:] == ',' + group:
+                if line.rstrip()[-len(group)-1:] == ',' + group:
                     flows.append(line.split()[1])
                     posnums.append(count)
                 count += 1
@@ -427,10 +593,12 @@ class App:
         return '#%02x%02x%02x' % (r, g, b)
 
     # update the frame - remove flows not near the frame of focus add flows coming near the frame of focus
-    def update_frame(self, x2=None):
+    def update_frame(self, temp=None):
+        if self.flowlist is None:
+            return
+        tilt = 0.5
         x1 = self.canvas.canvasx(0)
-        if x2 is None:
-            x2 = self.canvas.canvasx(self.canvas.winfo_width())
+        x2 = self.canvas.canvasx(self.canvas.winfo_width())
         self.canvas.delete('top')
         indexa = int(x1 / self.xmod/4)
         indexb = int(x2 / self.xmod/4)
@@ -448,9 +616,13 @@ class App:
                 self.currflows.remove(i)
         else:
             self.currflows = set()
-            self.canvas.delete(ALL)
+            self.canvas.delete('top')
+            self.canvas.delete('map')
+            self.canvas.delete('gapped')
             self.lastxmod = self.xmod
             self.lastymod = self.ymod
+        for i in self.stacker:
+            self.canvas.create_line(x1+5, self.ypos1 + i * self.ymod - 3, x2-5, self.ypos1 + i * self.ymod - 3, tags='top', fill='gray')
         for i in range(max([indexa, 0]), indexb):
             if not i in self.currflows:
                 count = 0
@@ -461,8 +633,8 @@ class App:
                         self.canvas.create_line([j[1][0] * self.xmod, j[2][0] * self.ymod + self.ypos1, j[1][1] * self.xmod, j[2][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1]), 2):
-                            self.canvas.create_line([(j[1][k-1] - 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1, (j[1][k-1] + 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][k] - 1) * self.xmod, j[2][k] * self.ymod + self.ypos1, (j[1][k] + 1) * self.xmod, j[2][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][k-1]) * self.xmod, j[2][k-1] * self.ymod + self.ypos1, (j[1][k-1] + tilt) * self.xmod, j[2][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][k] - tilt) * self.xmod, j[2][k] * self.ymod + self.ypos1, (j[1][k]) * self.xmod, j[2][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][k] * self.xmod, j[2][k] * self.ymod + self.ypos1, j[1][k+1] * self.xmod, j[2][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
@@ -470,8 +642,8 @@ class App:
                         self.canvas.create_line([j[1][0] * self.xmod, j[2][0] * self.ymod + self.ypos1, j[1][1] * self.xmod, j[2][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1]), 2):
-                            self.canvas.create_line([(j[1][k-1] - 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1, (j[1][k-1] + 1) * self.xmod, j[2][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][k] - 1) * self.xmod, j[2][k] * self.ymod + self.ypos1, (j[1][k] + 1) * self.xmod, j[2][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][k-1]) * self.xmod, j[2][k-1] * self.ymod + self.ypos1, (j[1][k-1] + tilt) * self.xmod, j[2][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][k] - tilt) * self.xmod, j[2][k] * self.ymod + self.ypos1, (j[1][k]) * self.xmod, j[2][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][k] * self.xmod, j[2][k] * self.ymod + self.ypos1, j[1][k+1] * self.xmod, j[2][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
@@ -479,16 +651,16 @@ class App:
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
-                            self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][0][k-1]) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + tilt) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][0][k] - tilt) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k]) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
-                            self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][1][k-1]) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + tilt) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][1][k] - tilt) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k]) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
@@ -497,23 +669,23 @@ class App:
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=int(j[3]/4), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
-                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
-                                                 (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
+                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + tilt) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
+                                                 (j[1][1][0] - tilt) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=int(j[3]/4), fill=j[4], dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 3: # if pair F R
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
-                            self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][0][k-1]) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + tilt) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][0][k] - tilt) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k]) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
-                            self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][1][k-1]) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + tilt) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][1][k] - tilt) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k]) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
@@ -522,23 +694,23 @@ class App:
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=min([10, j[3] * self.ymod / 8]), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
-                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
-                                                 (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
+                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + tilt) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
+                                                 (j[1][1][0] - tilt) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 4: # if pair R F
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
-                            self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][0][k-1]) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + tilt) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][0][k] - tilt) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k]) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
-                            self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][1][k-1]) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + tilt) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][1][k] - tilt) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k]) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=str(i))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=LAST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
@@ -547,23 +719,23 @@ class App:
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=min([10, j[3] * self.ymod / 8]), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
-                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
-                                                 (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
+                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + tilt) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
+                                                 (j[1][1][0] - tilt) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=min([10, j[3] * self.ymod / 8]), dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
                     elif j[0] == 5: # if pair R R
                         self.canvas.create_line([j[1][0][0] * self.xmod, j[2][0][0] * self.ymod + self.ypos1, j[1][0][1] * self.xmod, j[2][0][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][0]), 2):
-                            self.canvas.create_line([(j[1][0][k-1] - 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + 1) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][0][k] - 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k] + 1) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][0][k-1]) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1, (j[1][0][k-1] + tilt) * self.xmod, j[2][0][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][0][k] - tilt) * self.xmod, j[2][0][k] * self.ymod + self.ypos1, (j[1][0][k]) * self.xmod, j[2][0][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][0][k] * self.xmod, j[2][0][k] * self.ymod + self.ypos1, j[1][0][k+1] * self.xmod, j[2][0][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         self.canvas.create_line([j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][1] * self.xmod, j[2][1][1] * self.ymod + self.ypos1],
                                                 width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
                         for k in range(2, len(j[1][1]), 2):
-                            self.canvas.create_line([(j[1][1][k-1] - 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + 1) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
-                                                     (j[1][1][k] - 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k] + 1) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
+                            self.canvas.create_line([(j[1][1][k-1]) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1, (j[1][1][k-1] + tilt) * self.xmod, j[2][1][k-1] * self.ymod + self.ypos1,
+                                                     (j[1][1][k] - tilt) * self.xmod, j[2][1][k] * self.ymod + self.ypos1, (j[1][1][k]) * self.xmod, j[2][1][k] * self.ymod + self.ypos1],
                                                      smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], tags=('p' + str(i), 'f' + str(count), 'map'))
                             self.canvas.create_line([j[1][1][k] * self.xmod, j[2][1][k] * self.ymod + self.ypos1, j[1][1][k+1] * self.xmod, j[2][1][k+1] * self.ymod + self.ypos1],
                                                     width=j[3] * self.ymod, fill=j[4], arrow=FIRST, arrowshape=(5, 5, 0), tags=('p' + str(i), 'f' + str(count), 'map'))
@@ -572,8 +744,8 @@ class App:
                                                  (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=min([10, j[3] * self.ymod / 8]), fill='#000000', dash=(5,2), tags=('p' + str(i), 'gapped'), state=self.gapped_state)
                         else:
-                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + 1) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
-                                                 (j[1][1][0] - 1) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
+                            self.canvas.create_line((j[1][0][-1] * self.xmod, j[2][0][-1] * self.ymod + self.ypos1, (j[1][0][-1] + tilt) * self.xmod, j[2][0][-1] * self.ymod + self.ypos1,
+                                                 (j[1][1][0] - tilt) * self.xmod, j[2][1][0] * self.ymod + self.ypos1, j[1][1][0] * self.xmod, j[2][1][0] * self.ymod + self.ypos1),
                                                  smooth=True, width=min([10, j[3] * self.ymod / 8]), fill=j[4], dash=(5,2), tags=('p' + str(i), 'f' + str(count), 'map'))
             xpos = (i + 1) * self.xmod * 4
             if i >= indexa:
@@ -583,6 +755,7 @@ class App:
                 self.canvas.create_text(xpos + 4, self.ymod * self.flowend + self.ypos1 + 5, anchor=NW, text=thetext, font=self.customFont, tags='top')
         self.canvas.create_rectangle(x1+10, self.ypossnp + 20, x2 - 10, self.ypossnp, tags='top', fill='#E1974C')
         self.canvas.tag_raise('gapped')
+        self.canvas.tag_raise('otus')
         if len(positions) > 1:
             for i in range(len(positions)):
                 xpos = x1+15 + int((positions[i] - positions[0]) * 1.0 / (positions[-1] - positions[0]) * (x2 - x1 - 30))
@@ -668,7 +841,45 @@ class App:
             tkMessageBox.showerror('Pysam not found',
                                    'Creating a flow file requires pysam, please install.')
             return
+        testsam = pysam.Samfile(self.bamfile.get(), 'rb')
         self.create_flow_top.destroy()
+        if len(testsam.references) == 0:
+            tkMessageBox.showerror('No reference in BAM file', 'Can this even happen?')
+            return
+        elif len(testsam.references) == 1:
+            self.theref = testsam.references[0]
+            testsam.close()
+            self.run_flow()
+        else:
+            self.choice_top = Toplevel()
+            self.choice_top.grab_set()
+            self.choice_top.wm_attributes("-topmost", 1)
+            self.choice_top.geometry('+20+30')
+            self.choice_top.title('Choose reference')
+            self.choice_frame = Frame(self.choice_top)
+            self.choice_label = Label(self.choice_frame, text='Please choose reference\n from which to create flow:')
+            self.choice_label.grid(row=0, column=0)
+            self.choice_scroll = Scrollbar(self.choice_frame, orient=VERTICAL)
+            self.choice_entry = Listbox(self.choice_frame, yscrollcommand=self.choice_scroll.set)
+            self.choice_scroll.config(command=self.choice_entry.yview)
+            self.choice_scroll.grid(row=1, column=1, sticky=NS)
+            self.choice_entry.grid(row=1, column=0, sticky=EW)
+            for i in testsam.references:
+                self.choice_entry.insert(END, i)
+            testsam.close()
+            self.okchoice = Button(self.choice_frame, text='Ok', command=self.ok_choice)
+            self.okchoice.grid(row=2, column=0, columnspan=2, sticky=E)
+            self.choice_frame.grid(padx=10, pady=10)
+
+
+
+
+    def ok_choice(self):
+        self.theref = self.choice_entry.get(ACTIVE)
+        self.choice_top.destroy()
+        self.run_flow()
+
+    def run_flow(self):
         self.run_flow_top = Toplevel()
         self.run_flow_top.grab_set()
         self.run_flow_top.wm_attributes("-topmost", 1)
@@ -742,6 +953,7 @@ class App:
         indexa = int(x1 / self.xmod/4)
         self.xmod = self.xmod * 1.0526315789473684210526315789474
         self.currxscroll = self.currxscroll * 1.0526315789473684210526315789474
+        self.canvas.scale('otus', 0, 0, 1.0526315789473684210526315789474, 1)
         self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
         self.goto_base(indexa)
 
@@ -751,17 +963,28 @@ class App:
         indexa = int(x1 / self.xmod/4)
         self.xmod = self.xmod * 0.95
         self.currxscroll = self.currxscroll * 0.95
+        self.canvas.scale('otus', 0, 0, 0.95, 1)
         self.canvas.config(scrollregion=(0, 0, self.currxscroll, self.curryscroll))
         self.goto_base(indexa)
 
     # stretch flows in the y direction
     def stretch_y(self, stuff=None):
+        self.fontsize2 = self.fontsize2 * 1.0526315789473684210526315789474
+        self.customFont2.configure(size=int(round(self.fontsize2)))
         self.ymod = self.ymod * 1.0526315789473684210526315789474
+        for i in self.canvas.find_withtag('otus'):
+            x = self.canvas.coords(i)
+            self.canvas.coords(i, x[0], (x[1] - self.ypos1) * 1.0526315789473684210526315789474 + self.ypos1)
         self.update_frame()
 
     # shrink flows in the y direction
     def shrink_y(self, stuff=None):
+        self.fontsize2 = self.fontsize2 * 0.95
+        self.customFont2.configure(size=int(round(self.fontsize2)))
         self.ymod = self.ymod * 0.95
+        for i in self.canvas.find_withtag('otus'):
+            x = self.canvas.coords(i)
+            self.canvas.coords(i, x[0], (x[1] - self.ypos1) * 0.95 + self.ypos1)
         self.update_frame()
 
     # quit the program
@@ -791,6 +1014,7 @@ class App:
             import canvasvg
         except:
             tkMessageBox.showerror('canvasvg not found', 'Please install canvasvg.')
+            return
         canvasvg.saveall(saveas, self.canvas)
 
     # open the hapflow README
@@ -889,6 +1113,9 @@ Please do not hesitate to email with issues or bug reports.')
                 maxvar, self.medcount, self.maxcount = map(int, line.split()[1].split(','))
                 if self.maxvar is None:
                     self.maxvar = maxvar
+                if maxvar < self.maxvar:
+                    self.maxvar = maxvar
+                print self.maxvar
             elif line.startswith('G'):
                 count = 0
                 cumalative = 0
@@ -1029,7 +1256,10 @@ Please do not hesitate to email with issues or bug reports.')
         if self.reflength is None:
             self.reflength = self.poslist[-1][0]
         self.ymod = 800.0 / self.flowend
-        self.update_frame(600)
+        self.fontsize2 = self.stacker[1] * self.ymod / 20
+        self.customFont2.configure(size=int(round(self.fontsize2)))
+        self.otustack = '0' * ((self.maxvar + 1) * len(self.poslist))
+        self.update_frame()
 
 
     # scroll in x direction
@@ -1042,17 +1272,17 @@ Please do not hesitate to email with issues or bug reports.')
 
     # create the flow file
     def getflow(self, samfile=None, vcffile=None, outfile=None, maxdist=None):
-        try:
-            import pysam
-        except:
-            self.queue.put('pysam not found, please install.')
-            return
         if samfile is None:
             samfile = self.bamfile.get()
         else:
             self.queue = clqueue()
         if vcffile is None:
             vcffile = self.vcffile.get()
+        try:
+            import pysam
+        except ImportError:
+            self.queue.put('pysam not found, please install.')
+            return
         if outfile is None:
             outfile = self.flowfile.get()
         if maxdist is None:
@@ -1090,8 +1320,12 @@ Please do not hesitate to email with issues or bug reports.')
                         else:
                             aninstance.altrat = float(i.split('=')[1])
                 #out.write('V ' + str(pos) + ' ' + ref + ',' + alt + '\n')
-                snps.append(aninstance)
-        out.write('C ' + aninstance.chrom + '\n')
+                if aninstance.chrom == self.theref:
+                    snps.append(aninstance)
+        if len(snps) == 0:
+            self.queue.put('No variants found in vcf.')
+            return
+        out.write('C ' + snps[0].chrom + '\n')
         sam = pysam.Samfile(samfile, 'rb')
         reads = {}
         varlist = []
@@ -1100,6 +1334,7 @@ Please do not hesitate to email with issues or bug reports.')
         flownum = 0
         newflows3 = []
         groupcon = {}
+        snps.sort(key=lambda x: x.pos)
         self.queue.put('Finding flows in BAM.')
         for snp in snps: # for each variant in the vcf file
             newflows = {}
@@ -1221,7 +1456,8 @@ Please do not hesitate to email with issues or bug reports.')
                     for i in [snp.ref] + snp.alt.split(','):
                         varcount[i] = 0
                     for pileupread in pileupcolumn.pileups:
-                        rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
+                        if not pileupread.is_del and not pileupread.is_refskip:  # query position is None if is_del or is_refskip is set
+                            rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
                                pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
                         if rvar in varcount:
                             varcount[rvar] += 1
@@ -1311,7 +1547,6 @@ Please do not hesitate to email with issues or bug reports.')
             foundone = False
             bestcons = 0
             for j in consflow:
-             #   print 'dong', j
                 consensus = True
                 newflow = list(j)
                 for k in range(min([len(j), len(flow)])):
@@ -1367,9 +1602,22 @@ def orderflow(flow):
     return 1
 
 
+if len(sys.argv) > 1 and sys.argv[1] in set(['-h', '-help', '--help']):
+    sys.stdout.write('''HapFlow versions 1.1.0
+written by Mitchell J Sullivan (mjsull@gmail.com)
+This software is freely available under a gplv3 license.
 
+To create a flow file from the command line run:
 
-if len(sys.argv) > 1 and sys.argv[1] == '-cl':
+ $ python HapFlow.py -cl <bam_file> <vcf_file> <output_prefix>
+
+Where bam_file is and indexed bam file
+vcf file is a vcf file containing called variants and
+output_prefix is the prefix for all output flow files (one for each flow)
+
+For in depth instructions please consult the manual available at
+mjsull.github.io/HapFlow\n\n''')
+elif len(sys.argv) > 1 and sys.argv[1] == '-cl':
     aninstance = App(None)
 else:
     root = Tk()
