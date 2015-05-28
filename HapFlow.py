@@ -1052,7 +1052,7 @@ class App:
         self.about1label.grid(row=0, column=0)
         self.about2label = Label(self.frame7, text='HapFlow is a Python application for visualising\n\
 haplotypes present in sequencing data.\n\n\
-Version 0.1\n')
+Version 1.1\n')
         self.about2label.grid(row=1, column=0)
         self.frame7.grid(padx=10, pady=10)
 
@@ -1087,7 +1087,11 @@ Please do not hesitate to email with issues or bug reports.')
         self.frame9 = Frame(self.helppanel)
         self.about1label1 = Label(self.frame9, text='HapFlow', font='TkDefaultFont 13 bold')
         self.about1label1.grid(row=0, column=0)
-        self.supportlabel2 = Label(self.frame9, text='No citation information yet.')
+        self.supportlabel2 = Label(self.frame9, text='''Sullivan MJ, Bachmann NL, Timms P, Polkinghorne A. (2015)
+HapFlow: Visualising haplotypes in sequencing data
+PeerJ PrePrints 3:e1105
+https://dx.doi.org/10.7287/peerj.preprints.895v1
+''')
         self.supportlabel2.grid(row=1, column=0)
         self.frame9.grid(padx=10, pady=10)
 
