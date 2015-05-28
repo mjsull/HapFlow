@@ -20,6 +20,23 @@ import platform
 import webbrowser
 import sys
 
+def get_seq_read(read, var_pos, var_len):
+    a = None
+    b = None
+    var_pos -= 1
+    for i, j  in read.get_aligned_pairs():
+        if j == var_pos and a is None:
+            a = i
+        if j == var_pos + var_len:
+            b = i
+            break
+    if not a is None and not b is None:
+        return read.query_sequence[a:b]
+    else:
+        return None
+
+
+
 # dummy queue when running in command-line mode strings pushed here will be printed to the console instead of the GUI
 class clqueue:
     def put(self, theval):
@@ -263,7 +280,7 @@ class App:
                             compflow = map(str, i[1][varnum - i[0]:])
                             gotit = True
                             for j, k in enumerate(flow):
-                                if k == '_' or k == compflow[j] or (k == 'x' and compflow[j] == self.maxvar + 1) or (k > self.maxvar and compflow[j] == self.maxvar + 1):
+                                if k == '_' or k == compflow[j] or (k == 'x' and compflow[j] == str(self.maxvar)) or (k != 'x' and int(k) >= self.maxvar and compflow[j] == str(self.maxvar)):
                                     pass
                                 else:
                                     gotit = False
@@ -275,9 +292,11 @@ class App:
                                 if getotus is None:
                                     getotus = theotu
                                 else:
+                                    getotus = None
                                     break
-                        if self.writeotu_options.get() != 'Assign reads to multiple OTUs' and not getotus is None:
-                            outflows[getotus].append(outflow)
+                    if self.writeotu_options.get() != 'Assign reads to multiple OTUs' and not getotus is None:
+                        outflows[getotus].append(outflow)
+                        outpos[getotus].append(varnum - 1)
         for i, j in enumerate(outflows):
             if len(j) > 0:
                 if os.path.exists(self.otufilename.get() + '.' + str(i+1) + '.bam'):
@@ -302,7 +321,6 @@ class App:
             stacknum = (xnum - 1) * (self.maxvar + 1) + ynum
             ycoord = self.ypos1 + self.stacker[ynum] * self.ymod + int(self.otustack[(xnum - 1) * (self.maxvar + 1) + ynum]) * self.fontsize2
             if self.otus[self.otu.get()][1] == []:
-                #self.otus[self.otu.get()][2].append(self.canvas.create_oval(xcoord, ycoord, xcoord+self.otu_marker_size * self.ymod, ycoord+self.otu_marker_size * self.ymod, fill='blue'))
                 self.otus[self.otu.get()][2].append(self.canvas.create_text(xcoord, ycoord, anchor=NW, text=str(self.otu.get()+1), font=self.customFont2, tags='otus'))
                 self.otus[self.otu.get()][0] = xnum
                 self.otus[self.otu.get()][1].append(ynum)
@@ -321,7 +339,7 @@ class App:
                 self.otus[self.otu.get()][2].pop(0)
                 self.otus[self.otu.get()][1].pop(0)
                 self.otus[self.otu.get()][0] += 1
-                self.otustack[stacknum] = self.otustack[:stacknum] + str(int(self.otustack[stacknum]) - 1) + self.otustack[stacknum+1:]
+                self.otustack = self.otustack[:stacknum] + str(int(self.otustack[stacknum]) - 1) + self.otustack[stacknum+1:]
             elif xnum == self.otus[self.otu.get()][0] + len(self.otus[self.otu.get()][1]) - 1:
                 self.canvas.delete(self.otus[self.otu.get()][2][-1])
                 self.otus[self.otu.get()][2].pop()
@@ -360,9 +378,11 @@ class App:
             sam = pysam.Samfile(self.bamfile.get(), 'rb')
         except IOError:
             tkMessageBox.showerror('File not found', 'Please select a valid BAM file.')
+            self.bamfile.set('')
             return
         except ValueError:
             tkMessageBox.showerror('File not BAM file', 'Please make sure the file is a valid, indexed BAM file.')
+            self.bamfile.set('')
             return
         minsnp = float('inf')
         maxsnp = 0
@@ -393,66 +413,62 @@ class App:
             i += 1
         reads = {}
         for snp in snplist: # for each variant in the vcf file
-            for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
-                if pileupcolumn.pos == snp.pos - 1:
-                    vardict = {}
-                    varorder = []
-                    varcount = {}
-                    currerr = 0
-                    varlength = len(snp.ref)
-                    for i in [snp.ref] + snp.alt.split(','):
-                        varcount[i] = 0
-                    for pileupread in pileupcolumn.pileups:
-                        rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
-                               pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
-                        if rvar in varcount:
-                            varcount[rvar] += 1
+            vardict = {}
+            varorder = []
+            varcount = {}
+            currerr = 0
+            varlength = len(snp.ref)
+            for i in [snp.ref] + snp.alt.split(','):
+                varcount[i] = 0
+            for theread in sam.fetch(snp.chrom, snp.pos, snp.pos + 1):
+                rvar = get_seq_read(theread, snp.pos, varlength)
+                if rvar in varcount:
+                    varcount[rvar] += 1
+                else:
+                    currerr += 1
+            for i in varcount:
+                varorder.append((varcount[i], i))
+            varorder.sort(reverse=True)
+            count = 0
+            for i in varorder:
+                vardict[i[1]] = str(count)
+                count += 1
+            gottenreads = set() # prevent dovetailed paired-end reads recording two variants at a single position
+            for theread in sam.fetch(snp.chrom, snp.pos, snp.pos+1):
+                readname = theread.query_name
+                if not readname in gottenreads: # ignore the start of the second pair in dovetailed reads, there might be a better solution to this but would take a long time to implement and wouldn't provide much additional clarity.
+                    rvar = get_seq_read(theread, snp.pos, varlength)
+                    if readname in reads and not rvar is None:
+                        if reads[readname][1] != theread.is_read1:
+                            if theread.is_reverse and theread.reference_start + 1 == snp.pos:
+                                reads[readname].append('-s')
+                            elif theread.is_reverse:
+                                reads[readname].append('-')
+                            elif theread.reference_start + 1 == snp.pos:
+                                reads[readname].append('+s')
+                            else:
+                                reads[readname].append('+')
+                            reads[readname][1] = theread.is_read1
+                    elif not rvar is None:
+                        reads[readname] = [snp.pos, theread.is_read1]
+                        if theread.is_reverse and theread.reference_start + 1 == snp.pos:
+                            reads[readname].append('-s')
+                        elif theread.is_reverse:
+                            reads[readname].append('-')
+                        elif theread.reference_start + 1 == snp.pos:
+                            reads[readname].append('+s')
                         else:
-                            currerr += 1
-                    for i in varcount:
-                        varorder.append((varcount[i], i))
-                    varorder.sort(reverse=True)
-                    count = 0
-                    for i in varorder:
-                        vardict[i[1]] = str(count)
-                        count += 1
-                    gottenreads = set() # prevent dovetailed paired-end reads recording two variants at a single position
-                    for pileupread in pileupcolumn.pileups:
-                        readname = pileupread.alignment.query_name
-                        if not readname in gottenreads: # ignore the start of the second pair in dovetailed reads, there might be a better solution to this but would take a long time to implement and wouldn't provide much additional clarity.
-                            rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
-                                   pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
-                            if readname in reads:
-                                if reads[readname][1] != pileupread.alignment.is_read1:
-                                    if pileupread.alignment.is_reverse and pileupread.query_position == 0:
-                                        reads[readname].append('-s')
-                                    elif pileupread.alignment.is_reverse:
-                                        reads[readname].append('-')
-                                    elif pileupread.query_position == 0:
-                                        reads[readname].append('+s')
-                                    else:
-                                        reads[readname].append('+')
-                                    reads[readname][1] = pileupread.alignment.is_read1
-                            else:
-                                reads[readname] = [snp.pos, pileupread.alignment.is_read1]
-                                if pileupread.alignment.is_reverse and pileupread.query_position == 0:
-                                    reads[readname].append('-s')
-                                elif pileupread.alignment.is_reverse:
-                                    reads[readname].append('-')
-                                elif pileupread.query_position == 0:
-                                    reads[readname].append('+s')
-                                else:
-                                    reads[readname].append('+')
-                            if rvar in vardict:
-                                reads[readname].append(vardict[rvar])
-                            else:
-                                reads[readname].append('x')
-                            gottenreads.add(readname)
-                            if pileupread.query_position == pileupread.alignment.query_alignment_end:
-                                reads[readname].append('e')
-                    for i in reads:
-                        if not i in gottenreads:
-                            reads[i].append('_')
+                            reads[readname].append('+')
+                    if rvar in vardict:
+                        reads[readname].append(vardict[rvar])
+                    elif not rvar is None:
+                        reads[readname].append('x')
+                    gottenreads.add(readname)
+                    if not rvar is None and theread.reference_end + 1 == snp.pos:
+                        reads[readname].append('e')
+            for i in reads:
+                if not i in gottenreads:
+                    reads[i].append('_')
         outset = set()
         for i in reads:
             for j in flows:
@@ -1115,7 +1131,6 @@ Please do not hesitate to email with issues or bug reports.')
                     self.maxvar = maxvar
                 if maxvar < self.maxvar:
                     self.maxvar = maxvar
-                print self.maxvar
             elif line.startswith('G'):
                 count = 0
                 cumalative = 0
@@ -1132,7 +1147,7 @@ Please do not hesitate to email with issues or bug reports.')
             elif line.startswith('C'):
                 self.chrom = line.split()[1]
         flowfile.close()
-        stacks = [self.stacker[:] for i in range(len(initiallist))]
+        stacks = [self.stacker[:] for i in range(len(self.poslist))]
         colordict = {}
         lastcol = 0
         lastcol2 = 0
@@ -1288,7 +1303,7 @@ Please do not hesitate to email with issues or bug reports.')
         if maxdist is None:
             maxdist = self.maxdist.get()
         snps = []
-        vcf = open(vcffile)
+
         out = open(outfile, 'w')
         depthcount = []
         maxvar = 0
@@ -1296,32 +1311,32 @@ Please do not hesitate to email with issues or bug reports.')
         maxerror = 0 # maximum number of reads with no called variant at a single site
         snp2count = {}
         count = 0
-        self.queue.put('Reading VCF file.')
-        for line in vcf:
-            if not line.startswith('#'):
-                chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
-                aninstance = variation(chrom, pos, ref, alt, qual)
-                snp2count[int(pos)] = count
-                count += 1
-                for i in info.split(';'):
-                    if i.startswith('DP='):
-                        aninstance.depth = int(i.split('=')[1])
-                        depthcount.append(int(i.split('=')[1]))
-                    if i.startswith('AO='):
-                        if ',' in i:
-                            aninstance.altcount = int(i.split('=')[1].split(',')[0])
-                        else:
-                            aninstance.altcount = int(i.split('=')[1])
-                    if i.startswith('RO='):
-                        aninstance.refcount = int(i.split('=')[1])
-                    if i.startswith('AB='):
-                        if ',' in i:
-                            aninstance.altrat = float(i.split('=')[1].split(',')[0])
-                        else:
-                            aninstance.altrat = float(i.split('=')[1])
-                #out.write('V ' + str(pos) + ' ' + ref + ',' + alt + '\n')
-                if aninstance.chrom == self.theref:
-                    snps.append(aninstance)
+        self.queue.put('Reading VCF file.') # read the vcf file
+        with open(vcffile) as vcf:
+            for line in vcf:
+                if not line.startswith('#'):
+                    chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
+                    aninstance = variation(chrom, pos, ref, alt, qual)
+                    snp2count[int(pos)] = count
+                    count += 1
+                    for i in info.split(';'):
+                        if i.startswith('DP='):
+                            aninstance.depth = int(i.split('=')[1])
+                            depthcount.append(int(i.split('=')[1]))
+                        if i.startswith('AO='):
+                            if ',' in i:
+                                aninstance.altcount = int(i.split('=')[1].split(',')[0])
+                            else:
+                                aninstance.altcount = int(i.split('=')[1])
+                        if i.startswith('RO='):
+                            aninstance.refcount = int(i.split('=')[1])
+                        if i.startswith('AB='):
+                            if ',' in i:
+                                aninstance.altrat = float(i.split('=')[1].split(',')[0])
+                            else:
+                                aninstance.altrat = float(i.split('=')[1])
+                    if aninstance.chrom == self.theref:
+                        snps.append(aninstance)
         if len(snps) == 0:
             self.queue.put('No variants found in vcf.')
             return
@@ -1339,23 +1354,23 @@ Please do not hesitate to email with issues or bug reports.')
         for snp in snps: # for each variant in the vcf file
             newflows = {}
             removereads = []
-            for i in reads:
+            for i in reads: # move reads from dictionary to a list when we get past their first variant by maxdist bases
                 if reads[i][0] < snp.pos - maxdist:
                     rstring = str(reads[i][0]) + ',' + ','.join(reads[i][2:])
-                    if rstring.count('-') + rstring.count('+') > 2:
+                    if rstring.count('-') + rstring.count('+') > 2: # + and - indicate start of reads in flow - if there are more than two starts something has gone wrong. May need to change for future read types.
                         self.queue.put('Duplicate read names detected, please rename reads (or ensure reads only map once)')
                         return
-                    if rstring in newflows:
+                    if rstring in newflows: # if haplotype profile exists increment by one
                         newflows[rstring] += 1
                     else:
                         newflows[rstring] = 1
                     removereads.append(i)
-            for i in removereads:
+            for i in removereads: # remove added reads from dictionary
                 del reads[i]
             newflows2 = []
             for i in newflows:
-                newflows2.append(i.strip(',_') + ',' + str(newflows[i]))
-            newflows2.sort(key=lambda x: int(x.split(',')[-1]), reverse=True)
+                newflows2.append(i.strip(',_') + ',' + str(newflows[i])) # remove padding added to end of read
+            newflows2.sort(key=lambda x: int(x.split(',')[-1]), reverse=True) # sort by position and then frequency (descending)
             newflows2.sort(key=lambda x: int(x.split(',')[0]))
             for i in newflows2:
                 if '_' in i:
@@ -1407,9 +1422,9 @@ Please do not hesitate to email with issues or bug reports.')
                         groupcon[flownum] = (snp2count[int(i.split(',')[0])], flow)
                         tempnum = flownum
                     newflows3.append(i + ',' + str(tempnum) + '\n')
-            newflows3.sort(key=lambda x: int(x.split(',')[-2]), reverse=True)
-            newflows3.sort(key=lambda x: orderflow(x))
-            newflows3.sort(key=lambda x: int(x.split(',')[0]))
+            newflows3.sort(key=lambda x: int(x.split(',')[-2]), reverse=True) # sort by frequency
+            newflows3.sort(key=lambda x: orderflow(x)) # move flows that span multiple rows into the centre to create less criss crossing
+            newflows3.sort(key=lambda x: int(x.split(',')[0])) # sort by position
             iterit = True
             while iterit and newflows3 != []:
                 i = newflows3.pop(0)
@@ -1442,83 +1457,77 @@ Please do not hesitate to email with issues or bug reports.')
                         else:
                             newflows3 = [i] + newflows3
                             iterit = False
-                   # for q in toremove:
-                    #    del groupcon[q]
                 else:
                     out.write('F ' + i)
-            for pileupcolumn in sam.pileup(snp.chrom, snp.pos, snp.pos + 1):
-                if pileupcolumn.pos == snp.pos - 1:
-                    vardict = {}
-                    varorder = []
-                    varcount = {}
-                    currerr = 0
-                    varlength = len(snp.ref)
-                    for i in [snp.ref] + snp.alt.split(','):
-                        varcount[i] = 0
-                    for pileupread in pileupcolumn.pileups:
-                        if not pileupread.is_del and not pileupread.is_refskip:  # query position is None if is_del or is_refskip is set
-                            rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
-                               pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
-                        if rvar in varcount:
-                            varcount[rvar] += 1
-                        else:
-                            currerr += 1
-                    if currerr > maxerror:
-                        maxerror = currerr
-                    for i in varcount:
-                        varorder.append((varcount[i], i))
-                    varorder.sort(reverse=True)
-                    count = 0
-                    varlist.append('V ' + str(snp.pos))
-                    for i in varorder:
-                        if i[1] == snp.ref:
-                            varlist[-1] += ',*' + i[1]
-                        else:
-                            varlist[-1] += ',' + i[1]
-                        vardict[i[1]] = str(count)
-                        count += 1
-                        if len(vardict) > maxvar:
-                            maxeachvar += [0 for x in range(len(vardict) - maxvar)]
-                            maxvar = len(vardict)
-                        if i[0] > maxeachvar[count-1]:
-                            maxeachvar[count-1] = i[0]
-                    gottenreads = set() # prevent dovetailed paired-end reads recording two variants at a single position
-                    for pileupread in pileupcolumn.pileups:
-                        readname = pileupread.alignment.query_name
-                        if not readname in gottenreads: # ignore the start of the second pair in dovetailed reads, there might be a better solution to this but would take a long time to implement and wouldn't provide much additional clarity.
-                            rvar = pileupread.alignment.seq[pileupread.query_position:pileupread.query_position +
-                                   pileupread.alignment.get_overlap(pileupcolumn.pos, pileupcolumn.pos + varlength)]
-                            if readname in reads:
-                                if reads[readname][1] != pileupread.alignment.is_read1:
-                                    if pileupread.alignment.is_reverse and pileupread.query_position == 0:
-                                        reads[readname].append('-s')
-                                    elif pileupread.alignment.is_reverse:
-                                        reads[readname].append('-')
-                                    elif pileupread.query_position == 0:
-                                        reads[readname].append('+s')
-                                    else:
-                                        reads[readname].append('+')
-                                    reads[readname][1] = pileupread.alignment.is_read1
+            # first order the variants
+            vardict = {}
+            varorder = []
+            varcount = {}
+            currerr = 0
+            varlength = len(snp.ref)
+            for i in [snp.ref] + snp.alt.split(','): # create counts of each called variant
+                varcount[i] = 0
+            for theread in sam.fetch(snp.chrom, snp.pos, snp.pos+1):
+                rvar = get_seq_read(theread, snp.pos, varlength)
+                if rvar in varcount:
+                    varcount[rvar] += 1
+                elif rvar != None:
+                    currerr += 1
+            if currerr > maxerror:
+                maxerror = currerr
+            for i in varcount:
+                varorder.append((varcount[i], i))
+            varorder.sort(reverse=True)
+            count = 0
+            varlist.append('V ' + str(snp.pos))
+            for i in varorder:
+                if i[1] == snp.ref:
+                    varlist[-1] += ',*' + i[1]
+                else:
+                    varlist[-1] += ',' + i[1]
+                vardict[i[1]] = str(count)
+                count += 1
+                if len(vardict) > maxvar:
+                    maxeachvar += [0 for x in range(len(vardict) - maxvar)]
+                    maxvar = len(vardict)
+                if i[0] > maxeachvar[count-1]:
+                    maxeachvar[count-1] = i[0]
+            gottenreads = set() # prevent dovetailed paired-end reads recording two variants at a single position
+            for theread in sam.fetch(snp.chrom, snp.pos, snp.pos+1):
+                readname = theread.query_name
+                if not readname in gottenreads: # ignore the start of the second pair in dovetailed reads, there might be a better solution to this but would take a long time to implement and wouldn't provide much additional clarity.
+                    rvar = get_seq_read(theread, snp.pos, varlength)
+                    if readname in reads and not rvar is None:
+                        if reads[readname][1] != theread.is_read1:
+                            if theread.is_reverse and theread.reference_start + 1 == snp.pos:
+                                reads[readname].append('-s')
+                            elif theread.is_reverse:
+                                reads[readname].append('-')
+                            elif theread.reference_start + 1 == snp.pos:
+                                reads[readname].append('+s')
                             else:
-                                reads[readname] = [snp.pos, pileupread.alignment.is_read1]
-                                if pileupread.alignment.is_reverse and pileupread.query_position == 0:
-                                    reads[readname].append('-s')
-                                elif pileupread.alignment.is_reverse:
-                                    reads[readname].append('-')
-                                elif pileupread.query_position == 0:
-                                    reads[readname].append('+s')
-                                else:
-                                    reads[readname].append('+')
-                            if rvar in vardict:
-                                reads[readname].append(vardict[rvar])
-                            else:
-                                reads[readname].append('x')
-                            gottenreads.add(readname)
-                            if pileupread.query_position == pileupread.alignment.query_alignment_end:
-                                reads[readname].append('e')
-                    for i in reads:
-                        if not i in gottenreads:
-                            reads[i].append('_')
+                                reads[readname].append('+')
+                            reads[readname][1] = theread.is_read1
+                    elif not rvar is None:
+                        reads[readname] = [snp.pos, theread.is_read1]
+                        if theread.is_reverse and theread.reference_start + 1 == snp.pos:
+                            reads[readname].append('-s')
+                        elif theread.is_reverse:
+                            reads[readname].append('-')
+                        elif theread.reference_start + 1 == snp.pos:
+                            reads[readname].append('+s')
+                        else:
+                            reads[readname].append('+')
+                    if rvar in vardict:
+                        reads[readname].append(vardict[rvar])
+                    elif not rvar is None:
+                        reads[readname].append('x')
+                    gottenreads.add(readname)
+                    if not rvar is None and theread.reference_end + 1 == snp.pos:
+                        reads[readname].append('e')
+            for i in reads:
+                if not i in gottenreads:
+                    reads[i].append('_')
         newflows = {}
         for i in reads:
             rstring = str(reads[i][0]) + ',' + ','.join(reads[i][2:])
