@@ -50,7 +50,7 @@ Released   : 20130902
 			</div>
 			<p> 	<a href="#quickstart">Quickstart</a><br />
 					<a href="#tutorial1">Tutorial 1 - Exploring a premade flow file.</a><br />
-					<a href="#tutorial1">Tutorial 2 - Creating a flow file.</a></p>
+					<a href="#tutorial2">Tutorial 2 - Creating a flow file.</a></p>
 			<hr>
 			<div id='quickstart'><a name='quickstart'></a></div>
 			<h3>Quick Start</h3>
@@ -62,21 +62,39 @@ Released   : 20130902
 			indicates the proportion of reads with the profile. Black vertical lines indicate variants and position of the flow in the Y axis 
 			indicates which variant is present at that position in the flow. Direction of the arrow indicates the direction of the reads from 
 			which the flow was created.</p>
+			<hr>
 			<h4>Creating a flow file (GUI)</h4>
 			<p> To create a flow file you will need an indexed BAM file and a VCF file of called variants. For instructions on how to create a
-			indexed BAM and VCF file see Tutorial 2.<br /><br /> <strong>Please note:</strong> Some variant callers are designed to run on sequencing 
+			indexed BAM and VCF file see Tutorial 2.<br /><strong>Please note:</strong> Some variant callers are designed to run on sequencing 
 			from diploid cells and assume variants will be present at either 50% or 100% of your reads. These programs are not suitable for
 			detecting variants in mixed strain bacterial samples. We recommend using <a href="https://github.com/ekg/freebayes"> FreeBayes </a>
-			<br /><br />
-			To create a Flow file from the GUI simply go to File->Create Flow and select an indexed BAM file, a VCF file and your output file.
+			<br />
+			To create a Flow file from the GUI simply go to File->Create Flow and select an indexed BAM file, a VCF file and your output file.<br />
+			Flow files can also be created from the command-line, for instructions please download the manual.
 			</p>
-			<h4>Creating a flow file (command-line)</h4>
-			<p></p>	
 			<hr>
 			<div id='tutorial1'><a name='tutorial1'></a></div>
 			<h3> Tutorial 1 - Exploring a premade flow file.</h3>
-			<p>coming soon</p>
-			<div id='tutorial1'><a name='tutorial1'></a></div>
+			<p>This tutorial will let you explore a premade flow file and show you how to separate reads into two operational taxonomic units. In the interest of keeping the example files small only reads aligned to bases 360,000..380,000 were used. This tutorial assumes you have downloaded and extracted tutorial1.zip from the HapFlow website.
+	        <ol type="1">
+	          <li>1) Launch HapFlow by double clicking on the .exe or app file.</li>
+	          <li>2) Load flow by selecting File -> Load flows and then choosing example1.flw</li>
+	          <li>3) Explore the flow file by scrolling from left to right.</li>
+	          <li>4) Hide lines marking flows with gaps by selecting view -> hide gapped.</li>
+	          <li>5) Adjust the amount of variants displayed by pressing A and D on your keyboard.</li>
+	          <li>6) Adjust the height of the flows by pressing W and S on your keyboard.</li>
+	          <li>7) Left click on a Flow to highlight the flow, right click to bring up options relating to the flow.</li>
+	          <li>8) Go to the variant at base 363,350 by selecting tools -> goto base and typing in 363350</li>
+	          <li>9) Define OTU 1 by double clicking variants along the top and middle rows.</li>
+	          <li>10) Define OTU 2 by selecting tools-> Select OTU -> 2 and then double clicking variants along the top and middle rows.</li>
+	          <li>11) Define OTU 3 by selecting tools-> Select OTU -> 3 and then double clicking positions of the flow with an erroneous base.</li>
+	          <br />
+	          <img src="images/hapflow_ex1.png", alt="", class="image-full">
+	          Chlamydia sample with selected OTUs <br /><br />
+			  <li>12) Write OTUs to BAM by selecting tools -> Write OTUs and then choosing the downloaded BAM file and defining a prefix for output file. Files will be written to prefix.1.bam prefix.2.bam and prefix.3.bam</li> </ol>
+</p>
+			<hr>
+			<div id='tutorial2'><a name='tutorial2'></a></div>
 			<h3> Tutorial 2 - Creating a flow file.</h3>
 			<p>coming soon</p>
 		</div>
