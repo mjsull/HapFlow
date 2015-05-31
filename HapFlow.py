@@ -20,6 +20,7 @@ import platform
 import webbrowser
 import sys
 
+# get sequence of read aligned to var_pos to var_pos + var-len in the reference
 def get_seq_read(read, var_pos, var_len):
     a = None
     b = None
@@ -211,10 +212,12 @@ class App:
             self.selected = [pos, num, thecol]
         self.rcmenu.unpost()
 
+    # change the maximum number of variants shown per site
     def change_max_variants(self):
         x = tkSimpleDialog.askinteger('Change max. variants.', 'Please choose maximum variants per site to show.')
         self.maxvar = x
 
+    # write defined OTUs to separate BAM files
     def write_otus(self):
         try:
             self.write_otu.destroy()
@@ -244,15 +247,17 @@ class App:
         self.okotu.grid(column=1, row=3, sticky=E)
         self.otuframe.grid(padx=10, pady=10)
 
-
+    # choose original BAM file to find alignments
     def load_bam(self):
         filename = tkFileDialog.askopenfilename(title='Please select alignment file (BAM) from which flow was generated.')
         self.bamfile.set(filename)
 
+    # select prefix for output BAM files (write OTUs)
     def load_otubam(self):
         filename = tkFileDialog.asksaveasfilename(title='Prefix for output BAM files.')
         self.otufilename.set(filename)
 
+    # Seperates alignments into seperate BAM files
     def ok_otu(self):
         if self.bamfile.get() == '':
             tkMessageBox.showerror('BAM file not found.', 'Please select valid BAM file.')
@@ -306,7 +311,7 @@ class App:
                 self.get_names(j, outpos[i], True, self.otufilename.get() + '.' + str(i+1) + '.bam')
 
 
-
+    # keeps track of define OTUs and adds OTU numbers when double clicking the canvas
     def select_otu(self, event):
         absx, absy = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         xnum = int((absx+self.xmod*2) / self.xmod/4)
@@ -889,12 +894,13 @@ class App:
 
 
 
-
+    # ok button for choosing reference from references available in BAM
     def ok_choice(self):
         self.theref = self.choice_entry.get(ACTIVE)
         self.choice_top.destroy()
         self.run_flow()
-
+    
+    # open a window with updates about the progress of creating the flow file
     def run_flow(self):
         self.run_flow_top = Toplevel()
         self.run_flow_top.grab_set()
