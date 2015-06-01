@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # HapFlow   Written by: Mitchell Sullivan   mjsull@gmail.com
 # Supervisor: Dr. Adam Polkinghorne
-# Version 1.1.0 08.01.2014
+# Version 1.1.0 31.05.2015
 # License: GPLv3
 
 
