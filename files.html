@@ -54,17 +54,26 @@ Released   : 20130902
 			<hr>
 			<h3> Windows </h3>
 			<p> HapFlow - <a href="https://github.com/mjsull/HapFlow/releases/download/v1.1.0/HapFlow_win_1.1.0.exe" target="_blank" onclick="_gaq.push(['_trackEvent','HapFlow','HapFlow_exe','HapFlow_win']);">HapFlow_win_1.1.0.exe</a> <br />
-			pysam does not currently work on Windows, the Windows version of HapFlow can be used for visualisation only. We recommend using OSX or Linux to build the flow file. A command-line option is provided to allow flow files to be created on a server.</p>
+			pysam does not currently work on Windows, the Windows version of HapFlow can be used for visualisation only. We recommend using OSX or Linux to build the flow file. A command-line option is provided to allow flow files to be created on a server. </p>
 			<hr>
 			<h3> OSX  </h3>
-			<p> HapFlow - <a href="https://github.com/mjsull/HapFlow/releases/download/v1.1.0/HapFlow_osx_1.1.0" target="_blank" onclick="_gaq.push(['_trackEvent','HapFlow','HapFlow_exe','HapFlow_OSX']);">HapFlow_OSX_1.1.0</a> <br />
-			HapFlow may needed to changed to an executable file to run. To do this open terminal and then type "chmod +x" - then drag the downloaded HapFlow executable into the window or type the path to HapFlow excutable and press enter. HapFlow should now run by double-clicking on the exectuable.  </p>
+			<p> HapFlow - <a href="https://github.com/mjsull/HapFlow/releases/download/v1.1.0/HapFlow_osx_1_1_0" target="_blank" onclick="_gaq.push(['_trackEvent','HapFlow','HapFlow_exe','HapFlow_OSX']);">HapFlow_OSX_1_1_0</a> <br />
+			If you are using OSX Mountain Lion or later you will need to change your security settings to be able to run HapFlow. To do this go to System Preferences > Security and privacy > "General" Tab and then select Allow applications downloaded from anywhere. Once you have run HapFlow you may revert this to your preferred setting.<br />
+			HapFlow will also need to be changed to an executable file to run. To do this open terminal and then type "chmod +x " - then drag the downloaded HapFlow executable into the window (ensure there is a space after +x) or type the path to the HapFlow excutable and press enter. HapFlow should now run by double-clicking on the exectuable.  </p>
 			<hr>
 			<h3> Linux </h3>
 			<p> HapFlow - <a href="https://github.com/mjsull/HapFlow/releases/download/v1.1.0/HapFlow_gnu_1.1.0" target="_blank" onclick="_gaq.push(['_trackEvent','HapFlow','HapFlow_exe','HapFlow_gnu']);">HapFlow_gnu_1.1.0</a><br />
-			HapFlow may needed to changed to an executable fileto run. To do this right-click on the downloaded file and then click "Properties".
-			Select "Allow executing file as program." HapFlow should now run by double-clicking on the exectuable. <br />
+			HapFlow may needed to changed to an executable file to run. To do this in Ubuntu right-click on the downloaded file and then click "Properties". Select "Allow executing file as program." HapFlow should now run by double-clicking on the exectuable. Alternatively go to the console and type "sudo chmod +x " and then type the full path to the HapFlow binary. <br />
 			</p>
+			<hr>
+			<h4> Running as a Python application </h4>
+			<p> HapFlow - <a href="https://github.com/mjsull/HapFlow/releases/download/v1.1.0/HapFlow.py" target="_blank" onclick="_gaq.push(['_trackEvent','HapFlow','HapFlow_exe','HapFlow_py']);">HapFlow.py</a><br />
+			If the above options fail, you are using a 32 bit operating system or simply prefer to run HapFlow as a python script download the above script. <br />
+			If you wish to visualise flows with HapFlow Tkinter must be installed - Tkinter is included in the standard library for almost all distributions of Python. <br />
+			If you wish to create flow files or separate reads into BAM files from the GUI pysam version 0.8.1 or greater must be installed.
+			pysam may be installed using pip - "pip install pysam". If an earlier version of pysam is installed on your system it must be upgraded. This can be done using pip - "pip install --upgrade pysam". <br />
+			Finally if you wish to create SVG images using HapFlow canvasvg must be installed. It may also be installed using pip - "pip install canvasvg". <br /> 
+			Please visit the pysam and canvasvg websites for more detailed instructions for installation.
 			<hr>
 			<h3> Example files </h3>
 			<h4> Example 1 </h4>
