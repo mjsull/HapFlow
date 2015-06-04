@@ -81,7 +81,12 @@
 		width: 100%;
 		margin: 0 0 2em 0;
 	}
-	
+	.image-half
+	{
+		display: block;
+		width: 75%;
+		margin: 0 auto;
+	}
 	.image-left
 	{
 		float: left;
