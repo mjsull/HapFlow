@@ -1,7 +1,7 @@
 #!/usr/bin/env python
 # HapFlow   Written by: Mitchell Sullivan   mjsull@gmail.com
 # Supervisor: Dr. Adam Polkinghorne
-# Version 1.1.0 31.05.2015
+# Version 1.1.1 12.07.2015
 # License: GPLv3
 
 
@@ -1041,7 +1041,7 @@ class App:
 
     # open the hapflow README
     def help(self):
-        webbrowser.open_new('https://github.com/mjsull/HapFlow/blob/master/README.md')
+        webbrowser.open_new('https://github.com/mjsull/HapFlow/wiki')
 
     # create a window with information about Hapflow
     def about(self):
@@ -1058,7 +1058,7 @@ class App:
         self.about1label.grid(row=0, column=0)
         self.about2label = Label(self.frame7, text='HapFlow is a Python application for visualising\n\
 haplotypes present in sequencing data.\n\n\
-Version 1.1\n')
+Version 1.1.1\n')
         self.about2label.grid(row=1, column=0)
         self.frame7.grid(padx=10, pady=10)
 
@@ -1076,7 +1076,7 @@ Version 1.1\n')
         self.about1label1 = Label(self.frame9, text='HapFlow', font='TkDefaultFont 13 bold')
         self.about1label1.grid(row=0, column=0)
         self.supportlabel2 = Label(self.frame9, text='written by Mitchell Sullivan - mjsull@gmail.com\n\
-Please do not hesitate to email with issues or bug reports.')
+Please do not hesitate to email with issues, feature ideas or bug reports.')
         self.supportlabel2.grid(row=1, column=0)
         self.frame9.grid(padx=10, pady=10)
 
@@ -1622,7 +1622,7 @@ def orderflow(flow):
 
 
 if len(sys.argv) > 1 and sys.argv[1] in set(['-h', '-help', '--help']):
-    sys.stdout.write('''HapFlow versions 1.1.0
+    sys.stdout.write('''HapFlow versions 1.1.1
 written by Mitchell J Sullivan (mjsull@gmail.com)
 This software is freely available under a gplv3 license.
 
