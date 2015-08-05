@@ -1,10 +1,24 @@
 #!/usr/bin/env python
-# HapFlow   Written by: Mitchell Sullivan   mjsull@gmail.com
-# Supervisor: Dr. Adam Polkinghorne
-# Version 1.1.1 12.07.2015
-# License: GPLv3
 
-
+# Contiguity - visualising haplotypes in sequencing data
+# Copyright (C) 2013-2015 Mitchell Sullivan
+# This program is free software: you can redistribute it and/or modify
+# it under the terms of the GNU General Public License as published by
+# the Free Software Foundation, either version 3 of the License, or
+# (at your option) any later version.
+#
+# This program is distributed in the hope that it will be useful,
+# but WITHOUT ANY WARRANTY; without even the implied warranty of
+# MERCHANTABILITY or FITNESS FOR A PARTICULAR PURPOSE.  See the
+# GNU General Public License for more details.
+#
+# You should have received a copy of the GNU General Public License
+# along with this program.  If not, see <http://www.gnu.org/licenses/>.
+#
+# Mitchell Sullivan
+# mjsull@gmail.com
+# Falculty of Science, Health, Education and Engineering
+# University of the Sunshine Coast
 
 __author__ = 'mjsull'
 from Tkinter import *
@@ -19,6 +33,7 @@ import Queue
 import platform
 import webbrowser
 import sys
+import argparse
 
 # get sequence of read aligned to var_pos to var_pos + var-len in the reference
 def get_seq_read(read, var_pos, var_len):
@@ -58,22 +73,28 @@ class variation:
 class App:
     def __init__(self, master):
         if master is None:
-            try:
-                maxdist = int(sys.argv[5])
-            except IndexError:
-                maxdist = 1000
+            if args.ref_max == 'end':
+                ref_max = float('inf')
+            else:
+                try:
+                    ref_max = float(args.max_ref)
+                except ValueError:
+                    sys.stderr.write('Max. reference must be "end", or an integer.')
+                    return
             try:
                 import pysam
             except ImportError:
                 sys.stderr.write('pysam not found, please install.')
                 return
-            testbam = pysam.Samfile(sys.argv[2], 'rb')
-            references = testbam.references
-            testbam.close()
-            for i, j in enumerate(references):
-                self.theref = j
-                self.getflow(sys.argv[2], sys.argv[3], sys.argv[4] + '.' + str(i) + '.flw', maxdist)
-            return
+            if args.reference is None:
+                testbam = pysam.Samfile(args.bam_file, 'rb')
+                references = testbam.references
+                testbam.close()
+                for i, j in enumerate(references):
+                    self.getflow(args.bam_file, args.vcf_file, args.output_prefix + '.' + str(i) + '.flw', args.max_distance, j, args.ref_min, ref_max, args.min_quality, args.max_coverage)
+                return
+            else:
+                self.getflow(args.bam_file, args.vcf_file, args.output_prefix + '.flw', args.max_distance, args.reference, args.ref_min, ref_max, args.min_quality, args.max_coverage)
         self.otu = IntVar(value=0)
         self.flowlist = None
         self.otufilename = StringVar(value='')
@@ -144,6 +165,11 @@ class App:
         self.bamfile = StringVar(value='')
         self.vcffile = StringVar(value='')
         self.flowfile = StringVar(value='')
+        self.therefvar = StringVar(value='')
+        self.refmin = IntVar(value=0)
+        self.refmax = StringVar(value='end')
+        self.minvarqual = DoubleVar(value=10.0)
+        self.maxvarcov = DoubleVar(value=4.0)
         self.maxdist = IntVar(value=1000)
         self.reflength = None
         self.ypossnp = 60
@@ -184,8 +210,8 @@ class App:
         self.lastxmod = None
         self.lastymod = None
         self.otus = [[None, [], []] for i in range(10)]
-        if len(sys.argv) == 2:
-            self.flowfile.set(sys.argv[1])
+        if not args.load_flow is None:
+            self.flowfile.set(args.load_flow)
             self.load_flow()
 
     # posts menu when right click on flow - records position of click
@@ -313,6 +339,8 @@ class App:
 
     # keeps track of define OTUs and adds OTU numbers when double clicking the canvas
     def select_otu(self, event):
+        if self.flowlist is None:
+            return
         absx, absy = self.canvas.canvasx(event.x), self.canvas.canvasy(event.y)
         xnum = int((absx+self.xmod*2) / self.xmod/4)
         xcoord = (xnum) * self.xmod * 4 - self.xmod * 2
@@ -789,6 +817,12 @@ class App:
     
     # open a window that can initiate creating a flow file
     def create_flow(self):
+        try:
+            import pysam
+        except ImportError:
+            tkMessageBox.showerror('Pysam not found',
+                                   'Creating a flow file requires Pysam, please install.')
+            return
         self.create_flow_top = Toplevel()
         self.create_flow_top.grab_set()
         self.create_flow_top.wm_attributes("-topmost", 1)
@@ -813,21 +847,89 @@ class App:
         self.flowfileentry.grid(row=2, column=1)
         self.flowfileentrybutton = Button(self.create_flow_frame, text='...', command=self.loadflow)
         self.flowfileentrybutton.grid(row=2, column=2)
-        self.maxdistlabel = Label(self.create_flow_frame, text='Max. distance (bp):', width=30, anchor=E)
-        self.maxdistlabel.grid(row=3, column=0)
-        self.maxdistentry = Entry(self.create_flow_frame, textvariable=self.maxdist)
-        self.maxdistentry.grid(row=3, column=1)
+        self.refselectlabel = Label(self.create_flow_frame, text='Select reference:')
+        self.refselectlabel.grid(row=3, column=0, sticky=E)
+        self.refselectentry = Entry(self.create_flow_frame, textvariable=self.therefvar, justify=RIGHT, width=30)
+        self.refselectentry.grid(row=3, column=1)
+        self.refselectbutton = Button(self.create_flow_frame, text='...', command=self.choose_ref)
+        self.advanced_label = Label(self.create_flow_frame, text='Advanced options', font='Courier 10 bold', width=30)
+        self.advanced_label.grid(row=4, column=0, sticky=E)
+        self.refminlabel = Label(self.create_flow_frame, text='Filter variants before:')
+        self.refminlabel.grid(row=5, column=0, sticky=E)
+        self.refminentry = Entry(self.create_flow_frame, textvariable=self.refmin, width=30)
+        self.refminentry.grid(row=5, column=1)
+        self.minbplabel = Label(self.create_flow_frame, text='bp')
+        self.minbplabel.grid(row=5, column=2)
+        self.refmaxlabel = Label(self.create_flow_frame, text='Filter variants after:')
+        self.refmaxlabel.grid(row=6, column=0, sticky=E)
+        self.refmaxentry = Entry(self.create_flow_frame, textvariable=self.refmax, width=30)
+        self.refmaxentry.grid(row=6, column=1)
+        self.maxbplabel = Label(self.create_flow_frame, text='bp')
+        self.maxbplabel.grid(row=6, column=2)
+        self.maxdistlabel = Label(self.create_flow_frame, text='Max. distance (bp):')
+        self.maxdistlabel.grid(row=7, column=0, sticky=E)
+        self.maxdistentry = Entry(self.create_flow_frame, textvariable=self.maxdist, width=30)
+        self.maxdistentry.grid(row=7, column=1)
+        self.minvarquallabel = Label(self.create_flow_frame, text='Min. variant quality:')
+        self.minvarquallabel.grid(row=8, column=0, sticky=E)
+        self.minvarqualentry = Entry(self.create_flow_frame, textvariable=self.minvarqual, width=30)
+        self.minvarqualentry.grid(row=8, column=1)
+        self.maxvarcovlabel = Label(self.create_flow_frame, text='Filter high coverage variants:')
+        self.maxvarcovlabel.grid(row=9, column=0, sticky=E)
+        self.maxvarcoventry = Entry(self.create_flow_frame, textvariable=self.maxvarcov, width=30)
+        self.maxvarcoventry.grid(row=9, column=1)
         self.okflow = Button(self.create_flow_frame, text='Ok', command=self.ok_flow)
-        self.okflow.grid(row=4, column=2, sticky=E)
+        self.okflow.grid(row=10, column=2, sticky=E)
         self.create_flow_frame.grid(padx=10, pady=10)
-
 
     # ask for bam file name
     def loadbam(self):
+        import pysam
         filename = tkFileDialog.askopenfilename(parent=self.create_flow_top)
         if filename == '':
             return
         self.bamfile.set(filename)
+        testsam = pysam.Samfile(self.bamfile.get(), 'rb')
+        if len(testsam.references) == 0:
+            tkMessageBox.showerror('No reference in BAM file', 'Can this even happen?')
+            return
+        elif len(testsam.references) == 1:
+            self.therefvar.set(testsam.references[0])
+            testsam.close()
+        else:
+            self.choose_ref()
+
+    def choose_ref(self):
+        import pysam
+        try:
+            testsam = pysam.Samfile(self.bamfile.get(), 'rb')
+        except IOError:
+            tkMessageBox.showerror('File not found.', 'Please select a BAM file before choosing the reference.')
+        self.choice_top = Toplevel()
+        self.choice_top.grab_set()
+        self.choice_top.wm_attributes("-topmost", 1)
+        self.choice_top.geometry('+20+30')
+        self.choice_top.title('Choose reference')
+        self.choice_frame = Frame(self.choice_top)
+        self.choice_label = Label(self.choice_frame, text='Please choose reference\n from which to create flow:')
+        self.choice_label.grid(row=0, column=0)
+        self.choice_scroll = Scrollbar(self.choice_frame, orient=VERTICAL)
+        self.choice_entry = Listbox(self.choice_frame, yscrollcommand=self.choice_scroll.set)
+        self.choice_scroll.config(command=self.choice_entry.yview)
+        self.choice_scroll.grid(row=1, column=1, sticky=NS)
+        self.choice_entry.grid(row=1, column=0, sticky=EW)
+        for i in testsam.references:
+            self.choice_entry.insert(END, i)
+        testsam.close()
+        self.okchoice = Button(self.choice_frame, text='Ok', command=self.ok_choice)
+        self.okchoice.grid(row=2, column=0, columnspan=2, sticky=E)
+        self.choice_frame.grid(padx=10, pady=10)
+
+
+    # ok button for choosing reference from references available in BAM
+    def ok_choice(self):
+        self.therefvar.set(self.choice_entry.get(ACTIVE))
+        self.choice_top.destroy()
 
     # ask for vcf file name
     def loadvcf(self):
@@ -854,50 +956,9 @@ class App:
                 tkMessageBox.showerror('Already running process',
                                        'Please wait until current tasks have finished before running another process.')
                 return
-        except:
+        except AttributeError:
             pass
-        try:
-            import pysam
-        except:
-            tkMessageBox.showerror('Pysam not found',
-                                   'Creating a flow file requires pysam, please install.')
-            return
-        testsam = pysam.Samfile(self.bamfile.get(), 'rb')
         self.create_flow_top.destroy()
-        if len(testsam.references) == 0:
-            tkMessageBox.showerror('No reference in BAM file', 'Can this even happen?')
-            return
-        elif len(testsam.references) == 1:
-            self.theref = testsam.references[0]
-            testsam.close()
-            self.run_flow()
-        else:
-            self.choice_top = Toplevel()
-            self.choice_top.grab_set()
-            self.choice_top.wm_attributes("-topmost", 1)
-            self.choice_top.geometry('+20+30')
-            self.choice_top.title('Choose reference')
-            self.choice_frame = Frame(self.choice_top)
-            self.choice_label = Label(self.choice_frame, text='Please choose reference\n from which to create flow:')
-            self.choice_label.grid(row=0, column=0)
-            self.choice_scroll = Scrollbar(self.choice_frame, orient=VERTICAL)
-            self.choice_entry = Listbox(self.choice_frame, yscrollcommand=self.choice_scroll.set)
-            self.choice_scroll.config(command=self.choice_entry.yview)
-            self.choice_scroll.grid(row=1, column=1, sticky=NS)
-            self.choice_entry.grid(row=1, column=0, sticky=EW)
-            for i in testsam.references:
-                self.choice_entry.insert(END, i)
-            testsam.close()
-            self.okchoice = Button(self.choice_frame, text='Ok', command=self.ok_choice)
-            self.okchoice.grid(row=2, column=0, columnspan=2, sticky=E)
-            self.choice_frame.grid(padx=10, pady=10)
-
-
-
-    # ok button for choosing reference from references available in BAM
-    def ok_choice(self):
-        self.theref = self.choice_entry.get(ACTIVE)
-        self.choice_top.destroy()
         self.run_flow()
     
     # open a window with updates about the progress of creating the flow file
@@ -1034,7 +1095,7 @@ class App:
             tkMessageBox.showerror('File not valid', 'Please choose another file.')
         try:
             import canvasvg
-        except:
+        except ImportError:
             tkMessageBox.showerror('canvasvg not found', 'Please install canvasvg.')
             return
         canvasvg.saveall(saveas, self.canvas)
@@ -1058,7 +1119,7 @@ class App:
         self.about1label.grid(row=0, column=0)
         self.about2label = Label(self.frame7, text='HapFlow is a Python application for visualising\n\
 haplotypes present in sequencing data.\n\n\
-Version 1.1.1\n')
+Version 1.1.2\n')
         self.about2label.grid(row=1, column=0)
         self.frame7.grid(padx=10, pady=10)
 
@@ -1254,7 +1315,7 @@ https://dx.doi.org/10.7287/peerj.preprints.895v1
                     if q[2] in colordict:
                         h = colordict[q[2]]
                     else:
-                        h = (lastcol + random.randint(50,60)) % 360
+                        h = (lastcol + 53) % 360
                         lastcol = h
                         colordict[q[2]] = h
                     lastcol2 += 0.1 + random.random()/4
@@ -1296,7 +1357,7 @@ https://dx.doi.org/10.7287/peerj.preprints.895v1
         self.update_frame()
 
     # create the flow file
-    def getflow(self, samfile=None, vcffile=None, outfile=None, maxdist=None):
+    def getflow(self, samfile=None, vcffile=None, outfile=None, maxdist=None, theref=None, refmin=None, refmax=None, minvarqual=None, maxvarcov=None):
         if samfile is None:
             samfile = self.bamfile.get()
         else:
@@ -1312,9 +1373,29 @@ https://dx.doi.org/10.7287/peerj.preprints.895v1
             outfile = self.flowfile.get()
         if maxdist is None:
             maxdist = self.maxdist.get()
+        if theref is None:
+            theref = self.therefvar.get()
+        if refmin is None:
+            refmin = self.refmin.get()
+        if refmax is None:
+            if self.refmax.get() == 'end':
+                refmax = float('inf')
+            else:
+                try:
+                    refmax = int(self.refmax.get())
+                except ValueError:
+                    self.queue.put('Filter variants after\nneeds to be an integer.')
+                    return
+        if minvarqual is None:
+            minvarqual = self.minvarqual.get()
+        if maxvarcov is None:
+            maxvarcov = self.maxvarcov.get()
         snps = []
-
-        out = open(outfile, 'w')
+        try:
+            out = open(outfile, 'w')
+        except:
+            self.queue.put('Out file not valid.\nPlease try again.')
+            return
         depthcount = []
         maxvar = 0
         maxeachvar = [] # maximum count for most prevalent variant, second most prevalent variant etc.
@@ -1327,7 +1408,8 @@ https://dx.doi.org/10.7287/peerj.preprints.895v1
                 if not line.startswith('#'):
                     chrom, pos, id, ref, alt, qual, filt, info, form, unknown = line.split()
                     aninstance = variation(chrom, pos, ref, alt, qual)
-                    snp2count[int(pos)] = count
+                    pos, qual = int(pos), float(qual)
+                    snp2count[pos] = count
                     count += 1
                     for i in info.split(';'):
                         if i.startswith('DP='):
@@ -1345,8 +1427,14 @@ https://dx.doi.org/10.7287/peerj.preprints.895v1
                                 aninstance.altrat = float(i.split('=')[1].split(',')[0])
                             else:
                                 aninstance.altrat = float(i.split('=')[1])
-                    if aninstance.chrom == self.theref:
+                    if aninstance.chrom == theref and pos >= refmin and pos <= refmax and qual >= minvarqual:
                         snps.append(aninstance)
+        tempsnps = snps
+        snps = []
+        depthcount.sort()
+        for i in tempsnps:
+            if i.depth <= maxvarcov * depthcount[len(depthcount)/2]:
+                snps.append(i)
         if len(snps) == 0:
             self.queue.put('No variants found in vcf.')
             return
@@ -1602,7 +1690,7 @@ https://dx.doi.org/10.7287/peerj.preprints.895v1
             out.write('F ' + i)
         for i in varlist:
             out.write(i + '\n')
-        out.write('I ' + str(maxvar) + ',' + str(depthcount[3*len(depthcount)/4]) + ',' + str(depthcount[-1]) + '\n')
+        out.write('I ' + str(maxvar) + ',' + str(depthcount[len(depthcount)/2]) + ',' + str(depthcount[-1]) + '\n')
         out.write('G ' + ','.join(map(str, maxeachvar)) + ',' + str(maxerror) + '\n')
         out.close()
         self.queue.put('Flow file successfully created.')
@@ -1621,26 +1709,44 @@ def orderflow(flow):
     return 1
 
 
-if len(sys.argv) > 1 and sys.argv[1] in set(['-h', '-help', '--help']):
-    sys.stdout.write('''HapFlow versions 1.1.1
+parser = argparse.ArgumentParser(prog='HapFlow', formatter_class=argparse.RawDescriptionHelpFormatter, description='''
+HapFlow versions 1.1.2
 written by Mitchell J Sullivan (mjsull@gmail.com)
 This software is freely available under a gplv3 license.
 
 To create a flow file from the command line run:
 
- $ python HapFlow.py -cl <bam_file> <vcf_file> <output_prefix>
+ $ python HapFlow.py -b <bam_file> -v <vcf_file> -o <output_prefix>
 
 Where bam_file is and indexed bam file
 vcf file is a vcf file containing called variants and
-output_prefix is the prefix for all output flow files (one for each flow)
+output_prefix is the prefix for all output flow files (one for each reference in BAM)
+
+To view a created flow file from the commmand line run:
+ $ python HapFlow.py -l <flow_file>
 
 For in depth instructions please consult the manual available at
-mjsull.github.io/HapFlow\n\n''')
-elif len(sys.argv) > 1 and sys.argv[1] == '-cl':
+https://github.com/mjsull/HapFlow/wiki\n\n
+
+''', epilog="Thanks for using HapFlow")
+parser.add_argument('-b', '--bam_file', action='store', help='Indexed BAM file of aligned reads.')
+parser.add_argument('-v', '--vcf_file', action='store', help='VCF file of called variants.')
+parser.add_argument('-o', '--output_prefix', action='store', help='Prefix to use for output flow files.')
+parser.add_argument('-l', '--load_flow', action='store', help='Launch HapFlow-viewer with flow file loaded.')
+parser.add_argument('-r', '--reference', action='store', help='Only create flow file from this reference.')
+parser.add_argument('-r_min', '--ref_min', action='store', default=0, type=int, help='Only use variants after this position.')
+parser.add_argument('-r_max', '--ref_max', action='store', default='end', help='Only use variants before this position.')
+parser.add_argument('-min_q', '--min_quality', action='store', default=10.0, type=float, help='Only use variants with a quality value greater than this.')
+parser.add_argument('-max_c', '--max_coverage', action='store', default=4.0, type=float, help='Only use variants with coverage less than this value * median coverage.')
+parser.add_argument('-max_d', '--max_distance', action='store', default=1000, type=int, help='Maximum distance between two variants in the same flow. (set as the upper bound of expected insert size of reads (paired-end) or read length (single-end).')
+
+args = parser.parse_args()
+if not args.bam_file is None and not args.vcf_file is None and not args.output_prefix is None:
     aninstance = App(None)
-else:
+elif args.bam_file is None and args.vcf_file is None and args.output_prefix is None:
     root = Tk()
     root.title('HapFlow')
+    root.geometry('+20+30')
     root.option_add('*Font', 'Courier 10')
     root.option_add("*Background", "#E0E0FF")
     root.option_add("*Foreground", "#2B3856")
@@ -1650,3 +1756,6 @@ else:
     root.geometry("600x400")
     app = App(root)
     root.mainloop()
+else:
+    sys.stderr.write('To create a flow file from the command line a indexed BAM file, a VCF file and an output prefix are needed. (Flags -b, -v, -o).\n'
+                     'To use HapFlow to view a Flow File please run with either no arguments (load flow using the GUI) or only the --load_flow (-l) flag.')
