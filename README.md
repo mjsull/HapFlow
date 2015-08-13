@@ -5,4 +5,4 @@ HapFlow is a python application for visualising haplotypes present in sequencing
 
 It is freely available under the GPLv3 license.
 
-For installation and usage instructions please consult the manual.
+For installation and usage instructions please consult the [manual](https://github.com/mjsull/HapFlow/wiki).
