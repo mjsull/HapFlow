@@ -1,4 +1,4 @@
-HaploFlow
+HapFlow
 =========
 
 HapFlow is a python application for visualising haplotypes present in sequencing data. It identifies variant profiles present and reads and creates an abstract visual representation of these profiles to make haplotypes easier to identify.
