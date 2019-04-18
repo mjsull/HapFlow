@@ -21,15 +21,9 @@
 # University of the Sunshine Coast
 
 __author__ = 'mjsull'
-from Tkinter import *
-import threading
-import tkFileDialog
-import tkSimpleDialog
-import tkFont
-import tkMessageBox
+
 import random
 import os
-import Queue
 import platform
 import webbrowser
 import sys
@@ -187,7 +181,7 @@ class App:
         self.maxvar = 2
         self.currflows = set()
         self.gapped_state = NORMAL
-        self.queue = Queue.Queue()
+        self.queue = queue.Queue()
         self.rcmenu = Menu(root, tearoff=0)
         self.rcmenu.add_command(label="Details", command=self.details)
         self.rcmenu.add_command(label="Write flow readnames", command=self.write_flow_names)
@@ -1744,6 +1738,13 @@ args = parser.parse_args()
 if not args.bam_file is None and not args.vcf_file is None and not args.output_prefix is None:
     aninstance = App(None)
 elif args.bam_file is None and args.vcf_file is None and args.output_prefix is None:
+    from tkinter import *
+    import threading
+    import tkinter.filedialog as tkFileDialog
+    import tkinter.simpledialog as tkSimpleDialog
+    import tkinter.font as tkFont
+    import tkinter.messagebox as tkMessageBox
+    import queue
     root = Tk()
     root.title('HapFlow')
     root.geometry('+20+30')
